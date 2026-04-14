@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -254,6 +255,11 @@ QString sanitize_utf8_text(const std::string& value) {
     QString cleaned = QString::fromUtf8(value.c_str());
     cleaned.remove(QChar::ReplacementCharacter);
     return cleaned.normalized(QString::NormalizationForm_C);
+}
+
+double elapsed_ms(const std::chrono::steady_clock::time_point start,
+                  const std::chrono::steady_clock::time_point end) {
+    return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
 std::vector<std::string> split_words(const QString& value) {
@@ -798,23 +804,33 @@ ImageAnalysisResult LlavaImageAnalyzer::analyze(const std::filesystem::path& ima
     throw std::runtime_error("Visual LLM support is not available in this build.");
 #else
     auto logger = Logger::get_logger("core_logger");
+    const auto analysis_started = std::chrono::steady_clock::now();
     const std::string image_path_utf8 = Utils::path_to_utf8(image_path);
+    const auto bitmap_started = std::chrono::steady_clock::now();
     BitmapPtr bitmap(mtmd_helper_bitmap_init_from_file(vision_ctx_, image_path_utf8.c_str()));
     if (!bitmap) {
         throw std::runtime_error("Failed to load image for visual analysis: " + image_path_utf8);
     }
+    ImageAnalysisDiagnostics diagnostics;
+    diagnostics.available = true;
+    diagnostics.bitmap_load_ms = elapsed_ms(bitmap_started, std::chrono::steady_clock::now());
+    diagnostics.batch_size = batch_size_;
+    diagnostics.text_gpu_enabled = text_gpu_enabled_;
+    diagnostics.mmproj_gpu_enabled = mmproj_gpu_enabled_;
 
     const auto description_request = build_description_request(prompt_policy_);
     const std::string description = infer_text(bitmap.get(),
                                                description_request.system_prompt,
                                                description_request.user_prompt,
-                                               settings_.n_predict);
+                                               settings_.n_predict,
+                                               &diagnostics.description_pass);
 
     const auto filename_request = build_filename_request(prompt_policy_, description);
     const std::string raw_filename = infer_text(nullptr,
                                                 filename_request.system_prompt,
                                                 filename_request.user_prompt,
-                                                settings_.n_predict);
+                                                settings_.n_predict,
+                                                &diagnostics.filename_pass);
     if (logger) {
         logger->info("Visual raw filename: {}", raw_filename);
     }
@@ -829,6 +845,8 @@ ImageAnalysisResult LlavaImageAnalyzer::analyze(const std::filesystem::path& ima
     ImageAnalysisResult result;
     result.description = description;
     result.suggested_name = normalize_filename(filename_base, image_path);
+    diagnostics.total_ms = elapsed_ms(analysis_started, std::chrono::steady_clock::now());
+    result.diagnostics = diagnostics;
     if (logger) {
         logger->info("Visual suggested filename: {}", result.suggested_name);
     }
@@ -851,6 +869,8 @@ void LlavaImageAnalyzer::mtmd_progress_callback(const char* name,
     if (!self->settings_.batch_progress) {
         return;
     }
+    self->image_batch_current_.store(current_batch, std::memory_order_relaxed);
+    self->image_batch_total_.store(total_batches, std::memory_order_relaxed);
     self->settings_.batch_progress(current_batch, total_batches);
 }
 
@@ -893,11 +913,23 @@ void LlavaImageAnalyzer::mtmd_log_callback(enum ggml_log_level level,
 std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
                                            std::string_view system_prompt,
                                            const std::string& user_prompt,
-                                           int32_t max_tokens) {
+                                           int32_t max_tokens,
+                                           ImageInferenceDiagnostics* diagnostics) {
     if (!context_) {
         initialize_context();
     }
     reset_context_state();
+
+    if (diagnostics) {
+        *diagnostics = {};
+        diagnostics->used_image = bitmap != nullptr;
+    }
+    if (bitmap) {
+        image_batch_current_.store(0, std::memory_order_relaxed);
+        image_batch_total_.store(0, std::memory_order_relaxed);
+    }
+
+    const auto inference_started = std::chrono::steady_clock::now();
 
     std::string formatted_prompt;
     if (!format_visual_prompt(model_, system_prompt, user_prompt, formatted_prompt) || formatted_prompt.empty()) {
@@ -939,12 +971,17 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
     LogGuard log_guard(this);
 #endif
 
+    const auto tokenize_started = std::chrono::steady_clock::now();
     const int32_t tokenize_res = mtmd_tokenize(
         vision_ctx_,
         chunks.get(),
         &text,
         bitmap_ptr,
         bitmap_count);
+    const auto tokenize_finished = std::chrono::steady_clock::now();
+    if (diagnostics) {
+        diagnostics->tokenize_ms = elapsed_ms(tokenize_started, tokenize_finished);
+    }
     if (tokenize_res != 0) {
         throw std::runtime_error("mtmd_tokenize failed with code " + std::to_string(tokenize_res));
     }
@@ -971,6 +1008,7 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
 #endif
 
     llama_pos new_n_past = 0;
+    const auto eval_started = std::chrono::steady_clock::now();
     if (mtmd_helper_eval_chunks(vision_ctx_,
                                 context_,
                                 chunks.get(),
@@ -981,11 +1019,22 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
                                 &new_n_past) != 0) {
         throw std::runtime_error("mtmd_helper_eval_chunks failed");
     }
+    const auto eval_finished = std::chrono::steady_clock::now();
+    if (diagnostics) {
+        diagnostics->eval_ms = elapsed_ms(eval_started, eval_finished);
+        if (bitmap) {
+            diagnostics->image_batch_current =
+                image_batch_current_.load(std::memory_order_relaxed);
+            diagnostics->image_batch_total =
+                image_batch_total_.load(std::memory_order_relaxed);
+        }
+    }
 
     std::string response;
     response.reserve(256);
 
     const int vocab_size = llama_vocab_n_tokens(vocab_);
+    const auto generation_started = std::chrono::steady_clock::now();
     for (int32_t i = 0; i < max_tokens; ++i) {
         const float* logits = llama_get_logits(context_);
         if (!logits) {
@@ -1010,17 +1059,25 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
         }
     }
 
+    if (diagnostics) {
+        const auto generation_finished = std::chrono::steady_clock::now();
+        diagnostics->generate_ms = elapsed_ms(generation_started, generation_finished);
+        diagnostics->total_ms = elapsed_ms(inference_started, generation_finished);
+    }
+
     return trim(response);
 }
 #else
 std::string LlavaImageAnalyzer::infer_text(void* bitmap,
                                            std::string_view system_prompt,
                                            const std::string& user_prompt,
-                                           int32_t max_tokens) {
+                                           int32_t max_tokens,
+                                           ImageInferenceDiagnostics* diagnostics) {
     (void)bitmap;
     (void)system_prompt;
     (void)user_prompt;
     (void)max_tokens;
+    (void)diagnostics;
     throw std::runtime_error("Visual LLM support is not available in this build.");
 }
 #endif

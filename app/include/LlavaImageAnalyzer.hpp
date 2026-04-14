@@ -3,6 +3,7 @@
 #include "ImageAnalyzer.hpp"
 #include "VisualModelCatalog.hpp"
 
+#include <atomic>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -85,7 +86,8 @@ private:
     std::string infer_text(mtmd_bitmap* bitmap,
                            std::string_view system_prompt,
                            const std::string& user_prompt,
-                           int32_t max_tokens);
+                           int32_t max_tokens,
+                           ImageInferenceDiagnostics* diagnostics = nullptr);
 #else
     /**
      * @brief Runs inference on the given bitmap (stub for non-MTMD builds).
@@ -98,7 +100,8 @@ private:
     std::string infer_text(void* bitmap,
                            std::string_view system_prompt,
                            const std::string& user_prompt,
-                           int32_t max_tokens);
+                           int32_t max_tokens,
+                           ImageInferenceDiagnostics* diagnostics = nullptr);
 #endif
     /**
      * @brief Sanitizes a suggested filename.
@@ -144,6 +147,8 @@ private:
     int32_t batch_size_{512};
     bool text_gpu_enabled_{false};
     bool mmproj_gpu_enabled_{false};
+    std::atomic<int32_t> image_batch_current_{0};
+    std::atomic<int32_t> image_batch_total_{0};
     void initialize_context();
     void reset_context_state();
     static void mtmd_progress_callback(const char* name,

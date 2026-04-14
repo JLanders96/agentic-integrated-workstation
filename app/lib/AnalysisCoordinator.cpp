@@ -69,6 +69,37 @@ std::string normalize_prompt_snippet(const std::string& value)
     return collapse_spaces_copy(value);
 }
 
+QString format_timing_value(double milliseconds)
+{
+    if (milliseconds >= 1000.0) {
+        return QObject::tr("%1 s").arg(milliseconds / 1000.0, 0, 'f', 2);
+    }
+    if (milliseconds >= 100.0) {
+        return QObject::tr("%1 ms").arg(milliseconds, 0, 'f', 0);
+    }
+    return QObject::tr("%1 ms").arg(milliseconds, 0, 'f', 1);
+}
+
+QString format_compute_mode(bool enabled)
+{
+    return enabled ? QStringLiteral("GPU") : QStringLiteral("CPU");
+}
+
+QString summarize_inference_pass(const ImageInferenceDiagnostics& diagnostics)
+{
+    QString summary = QObject::tr("%1 total").arg(format_timing_value(diagnostics.total_ms));
+    summary += QObject::tr(" (tokenize %1, eval %2, gen %3)")
+                   .arg(format_timing_value(diagnostics.tokenize_ms),
+                        format_timing_value(diagnostics.eval_ms),
+                        format_timing_value(diagnostics.generate_ms));
+    if (diagnostics.used_image && diagnostics.image_batch_total > 0) {
+        summary += QObject::tr(", image batches %1/%2")
+                       .arg(diagnostics.image_batch_current)
+                       .arg(diagnostics.image_batch_total);
+    }
+    return summary;
+}
+
 std::optional<bool> read_env_bool(const char* key)
 {
     const char* value = std::getenv(key);
@@ -849,6 +880,67 @@ void AnalysisCoordinator::execute()
                 persist_cached_suggestion(cached_entry, suggested_name);
             };
 
+            bool visual_runtime_summary_emitted = false;
+            auto emit_visual_diagnostics = [&](const FileEntry& entry,
+                                               const ImageAnalysisResult& analysis) {
+                const auto& diagnostics = analysis.diagnostics;
+                if (!diagnostics.available) {
+                    return;
+                }
+
+                const QString backend_name = visual_backend && visual_backend->descriptor
+                                                 ? QString::fromUtf8(visual_backend->descriptor->display_name)
+                                                 : app_.tr("Unknown");
+                const QString text_mode = format_compute_mode(diagnostics.text_gpu_enabled);
+                const QString mmproj_mode = format_compute_mode(diagnostics.mmproj_gpu_enabled);
+                if (!visual_runtime_summary_emitted) {
+                    app_.append_progress(
+                        to_utf8(app_.tr("[VISION] Runtime: backend=%1 | text=%2 | mmproj=%3 | batch_size=%4")
+                                    .arg(backend_name, text_mode, mmproj_mode)
+                                    .arg(diagnostics.batch_size)));
+                    visual_runtime_summary_emitted = true;
+                }
+
+                const QString image_name = QString::fromStdString(entry.file_name);
+                const QString description_summary = summarize_inference_pass(diagnostics.description_pass);
+                const QString filename_summary = summarize_inference_pass(diagnostics.filename_pass);
+                app_.append_progress(
+                    to_utf8(app_.tr("[VISION] Timing %1: load %2 | describe %3 | filename %4 | total %5")
+                                .arg(image_name,
+                                     format_timing_value(diagnostics.bitmap_load_ms),
+                                     description_summary,
+                                     filename_summary,
+                                     format_timing_value(diagnostics.total_ms))));
+
+                if (app_.core_logger) {
+                    app_.core_logger->info(
+                        "Visual timing '{}' backend='{}' text={} mmproj={} batch_size={} "
+                        "bitmap_load_ms={:.1f} describe_ms={:.1f} describe_tokenize_ms={:.1f} "
+                        "describe_eval_ms={:.1f} describe_gen_ms={:.1f} describe_image_batches={}/{} "
+                        "filename_ms={:.1f} filename_tokenize_ms={:.1f} filename_eval_ms={:.1f} "
+                        "filename_gen_ms={:.1f} total_ms={:.1f}",
+                        entry.file_name,
+                        visual_backend && visual_backend->descriptor
+                            ? visual_backend->descriptor->id
+                            : "unknown",
+                        diagnostics.text_gpu_enabled ? "gpu" : "cpu",
+                        diagnostics.mmproj_gpu_enabled ? "gpu" : "cpu",
+                        diagnostics.batch_size,
+                        diagnostics.bitmap_load_ms,
+                        diagnostics.description_pass.total_ms,
+                        diagnostics.description_pass.tokenize_ms,
+                        diagnostics.description_pass.eval_ms,
+                        diagnostics.description_pass.generate_ms,
+                        diagnostics.description_pass.image_batch_current,
+                        diagnostics.description_pass.image_batch_total,
+                        diagnostics.filename_pass.total_ms,
+                        diagnostics.filename_pass.tokenize_ms,
+                        diagnostics.filename_pass.eval_ms,
+                        diagnostics.filename_pass.generate_ms,
+                        diagnostics.total_ms);
+                }
+            };
+
             auto handle_visual_failure = [&](const FileEntry& entry,
                                              const std::string& reason,
                                              bool already_renamed,
@@ -1026,6 +1118,7 @@ void AnalysisCoordinator::execute()
                                 app_.tr("[VISION] Analyzing %1")
                                     .arg(QString::fromStdString(entry.file_name))));
                             const auto analysis = analyzer->analyze(entry.full_path);
+                            emit_visual_diagnostics(entry, analysis);
                             const std::string prompt_name = analysis.suggested_name;
                             const std::string enriched_name = enrich_image_suggestion(entry, prompt_name);
                             const auto prompt_path = build_image_prompt_path(entry.full_path,

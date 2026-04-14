@@ -10,6 +10,48 @@
 #include <string>
 
 /**
+ * @brief Timing and batch diagnostics for a single visual inference pass.
+ */
+struct ImageInferenceDiagnostics {
+    /** @brief Whether this pass included an image payload. */
+    bool used_image = false;
+    /** @brief Tokenization time in milliseconds. */
+    double tokenize_ms = 0.0;
+    /** @brief MTMD chunk evaluation time in milliseconds. */
+    double eval_ms = 0.0;
+    /** @brief Token generation time in milliseconds. */
+    double generate_ms = 0.0;
+    /** @brief Total time for this pass in milliseconds. */
+    double total_ms = 0.0;
+    /** @brief Last reported image batch index for this pass. */
+    int32_t image_batch_current = 0;
+    /** @brief Last reported total image batches for this pass. */
+    int32_t image_batch_total = 0;
+};
+
+/**
+ * @brief Detailed diagnostics for a full image-analysis request.
+ */
+struct ImageAnalysisDiagnostics {
+    /** @brief Whether diagnostics were captured for this result. */
+    bool available = false;
+    /** @brief Bitmap decode/load time in milliseconds. */
+    double bitmap_load_ms = 0.0;
+    /** @brief End-to-end time for the full analysis request in milliseconds. */
+    double total_ms = 0.0;
+    /** @brief Effective llama context batch size used for evaluation. */
+    int32_t batch_size = 0;
+    /** @brief Whether the text model ran with GPU layers enabled. */
+    bool text_gpu_enabled = false;
+    /** @brief Whether the multimodal projector ran on GPU. */
+    bool mmproj_gpu_enabled = false;
+    /** @brief Description-pass timings. */
+    ImageInferenceDiagnostics description_pass;
+    /** @brief Filename-pass timings. */
+    ImageInferenceDiagnostics filename_pass;
+};
+
+/**
  * @brief Result returned by an image analyzer.
  */
 struct ImageAnalysisResult {
@@ -21,6 +63,10 @@ struct ImageAnalysisResult {
      * @brief Suggested filename derived from the description.
      */
     std::string suggested_name;
+    /**
+     * @brief Optional runtime diagnostics for the analysis.
+     */
+    ImageAnalysisDiagnostics diagnostics;
 };
 
 /**
