@@ -31,6 +31,60 @@ TEST_CASE("detect_preferred_backend reads environment") {
             LocalLLMTestAccess::BackendPreference::Cuda);
 }
 
+TEST_CASE("Image categorization uses an image-specific system prompt") {
+    const std::string prompt_path =
+        "home/theuser/Downloads/django_project_dashboard.png\n"
+        "Image description: Django administration interface screenshot showing a project dashboard.";
+    const std::string prompt = LocalLLMTestAccess::categorization_system_prompt_for_testing(
+        prompt_path,
+        FileType::File);
+
+    CHECK(prompt.find("always use Images as the main category") != std::string::npos);
+    CHECK(prompt.find("Reply with exactly one line in the format Images : <Subcategory>") != std::string::npos);
+    CHECK(prompt.find("Dashboards, Forms, Product Pages, Interfaces, File Managers") != std::string::npos);
+    CHECK(prompt.find("Use any provided image description as the primary evidence") != std::string::npos);
+    CHECK(prompt.find("If the file is an installer") == std::string::npos);
+    CHECK(prompt.find("If uncertain, make your best guess from the name only") == std::string::npos);
+}
+
+TEST_CASE("Generic file categorization keeps the general system prompt") {
+    const std::string prompt = LocalLLMTestAccess::categorization_system_prompt_for_testing(
+        "home/theuser/Downloads/freetube_0.23.5_amd64.deb",
+        FileType::File);
+
+    CHECK(prompt.find("If the file is an installer") != std::string::npos);
+    CHECK(prompt.find("If uncertain, make your best guess from the name only") != std::string::npos);
+}
+
+TEST_CASE("Image categorization uses a concise user prompt without guidance block") {
+    const std::string file_name = "samsung_qn90c_tv.jpeg";
+    const std::string file_path =
+        "home/theuser/Downloads/samsung_qn90c_tv.jpeg\n"
+        "Image description: Product page screenshot showing Samsung QN90C televisions arranged in a grid, with specifications and prices.";
+    const std::string consistency_context =
+        "Image categorization guidance:\n"
+        "- Categorize the subject matter shown in the image, not merely the file format.\n"
+        "- For UI-like screenshots, prefer labels that describe what is on screen.\n\n"
+        "Allowed main categories (pick exactly one label from the numbered list):\n"
+        "1) Electronics\n"
+        "2) Images";
+
+    const std::string prompt = LocalLLMTestAccess::categorization_user_prompt_for_testing(
+        file_name,
+        file_path,
+        FileType::File,
+        consistency_context);
+
+    CHECK(prompt.find("Categorize this image file for file organization.") == 0);
+    CHECK(prompt.find("File name: samsung_qn90c_tv.jpeg") != std::string::npos);
+    CHECK(prompt.find("Path: home/theuser/Downloads/samsung_qn90c_tv.jpeg") != std::string::npos);
+    CHECK(prompt.find("Image description: Product page screenshot showing Samsung QN90C televisions arranged in a grid, with specifications and prices.") != std::string::npos);
+    CHECK(prompt.find("Answer with exactly one line:\nImages : <Subcategory>") != std::string::npos);
+    CHECK(prompt.find("Image categorization guidance:") == std::string::npos);
+    CHECK(prompt.find("Allowed main categories") != std::string::npos);
+    CHECK(prompt.find("Full path:") == std::string::npos);
+}
+
 TEST_CASE("CPU backend is honored when forced") {
     TempModelFile model;
     EnvVarGuard backend("AI_FILE_SORTER_GPU_BACKEND", "cpu");

@@ -604,7 +604,48 @@ std::string sanitize_categorization_output(std::string output) {
     return output;
 }
 
-std::string categorization_system_prompt() {
+constexpr std::string_view kImageDescriptionMarker = "\nImage description: ";
+constexpr std::string_view kDocumentSummaryMarker = "\nDocument summary: ";
+
+bool has_marker(std::string_view text, std::string_view marker) {
+    return text.find(marker) != std::string_view::npos;
+}
+
+std::pair<std::string, std::string> split_prompt_payload(std::string_view payload,
+                                                         std::string_view marker) {
+    const auto marker_pos = payload.find(marker);
+    if (marker_pos == std::string_view::npos) {
+        return {std::string(payload), std::string()};
+    }
+
+    const std::size_t content_pos = marker_pos + marker.size();
+    std::string base = trim_copy(std::string(payload.substr(0, marker_pos)));
+    std::string content = trim_copy(std::string(payload.substr(content_pos)));
+    return {std::move(base), std::move(content)};
+}
+
+std::string strip_image_guidance_block(std::string context) {
+    constexpr std::string_view kImageGuidanceHeader = "Image categorization guidance:\n";
+    const auto header_pos = context.find(kImageGuidanceHeader);
+    if (header_pos == std::string::npos) {
+        return trim_copy(std::move(context));
+    }
+
+    std::size_t erase_begin = header_pos;
+    if (erase_begin >= 2 && context.substr(erase_begin - 2, 2) == "\n\n") {
+        erase_begin -= 2;
+    }
+
+    std::size_t erase_end = context.find("\n\n", header_pos + kImageGuidanceHeader.size());
+    if (erase_end == std::string::npos) {
+        erase_end = context.size();
+    }
+
+    context.erase(erase_begin, erase_end - erase_begin);
+    return trim_copy(std::move(context));
+}
+
+std::string generic_file_categorization_system_prompt() {
     return "You are a file categorization assistant. If the file is an installer, "
            "determine the type of software it installs. Base your answer on the "
            "filename, extension, and any directory context provided. Reply with "
@@ -614,6 +655,112 @@ std::string categorization_system_prompt() {
            "explain your answer, add extra lines, or use label words like "
            "'Category' or 'Subcategory'. If uncertain, make your best guess from "
            "the name only.";
+}
+
+std::string document_categorization_system_prompt() {
+    return "You are a document categorization assistant. Categorize the document by "
+           "its subject matter and content, not merely by its file extension or the "
+           "application that may have created it. Use any provided document summary "
+           "as the primary evidence, and use the filename, extension, and directory "
+           "context only as supporting clues. Reply with exactly one line in the "
+           "format <Main category> : <Subcategory>. Main category must be broad "
+           "(one or two words, plural). Subcategory must be specific, relevant, and "
+           "must not repeat the main category. Do not explain your answer, add "
+           "extra lines, or use label words like 'Category' or 'Subcategory'.";
+}
+
+std::string image_categorization_system_prompt() {
+    return "You categorize image files for filesystem organization. Because the "
+           "input is an image file, always use Images as the main category. The "
+           "subcategory should describe what the image shows in concise plural form "
+           "when possible. For screenshots and UI captures, classify the on-screen "
+           "content as an image subtype such as Dashboards, Forms, Product Pages, "
+           "Interfaces, File Managers, Admin Panels, Charts, or similar. Do not use "
+           "Software, Operating Systems, Databases, Installers, Technology, or "
+           "similar domain categories as the main category for ordinary image files. "
+           "Use any provided image description as the primary evidence, and use the "
+           "filename, extension, and directory context only as supporting clues. "
+           "Reply with exactly one line in the format Images : <Subcategory>. The "
+           "subcategory must be specific, relevant, concise, and must not repeat "
+           "Images. Do not explain your answer, add extra lines, or use label words "
+           "like 'Category' or 'Subcategory'.";
+}
+
+std::string directory_categorization_system_prompt() {
+    return "You are a directory categorization assistant. Categorize the directory "
+           "by the overall theme suggested by its name and path context. Reply with "
+           "exactly one line in the format <Main category> : <Subcategory>. Main "
+           "category must be broad (one or two words, plural). Subcategory must be "
+           "specific, relevant, and must not repeat the main category. Do not "
+           "explain your answer, add extra lines, or use label words like "
+           "'Category' or 'Subcategory'.";
+}
+
+std::string categorization_system_prompt(std::string_view file_path, FileType file_type) {
+    if (file_type == FileType::Directory) {
+        return directory_categorization_system_prompt();
+    }
+    if (has_marker(file_path, kImageDescriptionMarker)) {
+        return image_categorization_system_prompt();
+    }
+    if (has_marker(file_path, kDocumentSummaryMarker)) {
+        return document_categorization_system_prompt();
+    }
+    return generic_file_categorization_system_prompt();
+}
+
+std::string build_generic_categorization_user_prompt(const std::string& file_name,
+                                                     const std::string& file_path,
+                                                     FileType file_type,
+                                                     const std::string& consistency_context) {
+    std::ostringstream prompt;
+    prompt << (file_type == FileType::File ? "Categorize this file.\n" : "Categorize this directory.\n");
+    if (!file_path.empty()) {
+        prompt << "Full path: " << file_path << "\n";
+    }
+    prompt << (file_type == FileType::File ? "File name: " : "Directory name: ")
+           << file_name << "\n";
+
+    if (!consistency_context.empty()) {
+        prompt << "\n" << consistency_context << "\n";
+    }
+
+    return prompt.str();
+}
+
+std::string build_image_categorization_user_prompt(const std::string& file_name,
+                                                   const std::string& file_path,
+                                                   const std::string& consistency_context) {
+    const auto [base_path, image_description] = split_prompt_payload(file_path, kImageDescriptionMarker);
+    const std::string extra_context = strip_image_guidance_block(consistency_context);
+
+    std::ostringstream prompt;
+    prompt << "Categorize this image file for file organization.\n\n";
+    prompt << "File name: " << file_name << "\n";
+    if (!base_path.empty()) {
+        prompt << "Path: " << base_path << "\n";
+    }
+    if (!image_description.empty()) {
+        prompt << "Image description: " << image_description << "\n";
+    }
+    if (!extra_context.empty()) {
+        prompt << "\n" << extra_context << "\n";
+    }
+    prompt << "\nAnswer with exactly one line:\nImages : <Subcategory>";
+    return prompt.str();
+}
+
+std::string categorization_user_prompt(const std::string& file_name,
+                                       const std::string& file_path,
+                                       FileType file_type,
+                                       const std::string& consistency_context) {
+    if (file_type == FileType::File && has_marker(file_path, kImageDescriptionMarker)) {
+        return build_image_categorization_user_prompt(file_name, file_path, consistency_context);
+    }
+    return build_generic_categorization_user_prompt(file_name,
+                                                    file_path,
+                                                    file_type,
+                                                    consistency_context);
 }
 
 int prompt_token_budget(int context_tokens, int max_tokens) {
@@ -647,16 +794,24 @@ std::string shrink_user_prompt_for_context(const std::string& prompt, int attemp
             return text;
         }
 
-        const auto file_name_marker = text.find("\nFile name:", marker_pos + 1);
-        const auto directory_name_marker = text.find("\nDirectory name:", marker_pos + 1);
         std::size_t suffix_start = std::string::npos;
-        if (file_name_marker != std::string::npos) {
-            suffix_start = file_name_marker;
-        }
-        if (directory_name_marker != std::string::npos) {
-            suffix_start = suffix_start == std::string::npos
-                ? directory_name_marker
-                : std::min(suffix_start, directory_name_marker);
+        constexpr std::array<std::string_view, 8> kSectionMarkers = {
+            "\nFile name:",
+            "\nDirectory name:",
+            "\nPath:",
+            "\nAllowed main categories",
+            "\nAllowed subcategories",
+            "\nDetermine the canonical main category and subcategory",
+            "\nRecent assignments for similar items:",
+            "\nAnswer with exactly one line:"
+        };
+        for (const std::string_view section_marker : kSectionMarkers) {
+            const auto section_pos = text.find(section_marker, marker_pos + 1);
+            if (section_pos != std::string::npos) {
+                suffix_start = suffix_start == std::string::npos
+                    ? section_pos
+                    : std::min(suffix_start, section_pos);
+            }
         }
         if (suffix_start == std::string::npos) {
             suffix_start = text.size();
@@ -2069,6 +2224,18 @@ llama_model_params prepare_model_params_for_testing(const std::string& model_pat
 #ifdef AI_FILE_SORTER_TEST_BUILD
 namespace LocalLLMTestAccess {
 
+std::string categorization_system_prompt_for_testing(const std::string& file_path,
+                                                     FileType file_type) {
+    return categorization_system_prompt(file_path, file_type);
+}
+
+std::string categorization_user_prompt_for_testing(const std::string& file_name,
+                                                   const std::string& file_path,
+                                                   FileType file_type,
+                                                   const std::string& consistency_context) {
+    return categorization_user_prompt(file_name, file_path, file_type, consistency_context);
+}
+
 std::string sanitize_output_for_testing(const std::string& output) {
     return sanitize_categorization_output(output);
 }
@@ -2142,19 +2309,7 @@ std::string LocalLLMClient::make_prompt(const std::string& file_name,
                                         FileType file_type,
                                         const std::string& consistency_context)
 {
-    std::ostringstream prompt;
-    prompt << (file_type == FileType::File ? "Categorize this file.\n" : "Categorize this directory.\n");
-    if (!file_path.empty()) {
-        prompt << "Full path: " << file_path << "\n";
-    }
-    prompt << (file_type == FileType::File ? "File name: " : "Directory name: ")
-           << file_name << "\n";
-
-    if (!consistency_context.empty()) {
-        prompt << "\n" << consistency_context << "\n";
-    }
-
-    return prompt.str();
+    return categorization_user_prompt(file_name, file_path, file_type, consistency_context);
 }
 
 
@@ -2430,7 +2585,7 @@ std::string LocalLLMClient::categorize_file(const std::string& file_name,
         }
     }
     std::string prompt = make_prompt(file_name, file_path, file_type, consistency_context);
-    const std::string system_prompt = categorization_system_prompt();
+    const std::string system_prompt = categorization_system_prompt(file_path, file_type);
     if (prompt_logging_enabled) {
         std::cout << "\n[DEV][PROMPT] Categorization request\n"
                   << "[system]\n" << system_prompt << "\n"
