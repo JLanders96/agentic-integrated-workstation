@@ -154,6 +154,31 @@ TEST_CASE("VisualLlmRuntime accepts legacy generic mmproj files when metadata ma
     CHECK(*backend->path_for(VisualModelArtifactKind::Mmproj) == legacy_mmproj_path);
 }
 
+TEST_CASE("VisualLlmRuntime accepts the legacy default LLaVA generic mmproj without metadata") {
+    TempDir home_dir;
+    EnvVarGuard home_guard("HOME", home_dir.path().string());
+    const std::string model_url = "https://example.com/llava-model.gguf";
+    const std::string mmproj_url = "https://example.com/mmproj-model-f16.gguf";
+    EnvVarGuard model_guard("LLAVA_MODEL_URL", model_url);
+    EnvVarGuard mmproj_guard("LLAVA_MMPROJ_URL", mmproj_url);
+
+    const auto& descriptor = default_visual_model_descriptor();
+    const auto model_path = visual_artifact_storage_path(descriptor, descriptor.artifacts[0]);
+    const auto legacy_mmproj_path =
+        std::filesystem::path(Utils::make_default_path_to_file_from_download_url(mmproj_url));
+
+    std::filesystem::create_directories(model_path.parent_path());
+    std::ofstream(model_path).put('x');
+    std::ofstream(legacy_mmproj_path).put('x');
+
+    std::string error;
+    const auto backend = VisualLlmRuntime::resolve_active_backend({}, &error);
+    REQUIRE(backend.has_value());
+    CHECK(error.empty());
+    REQUIRE(backend->path_for(VisualModelArtifactKind::Mmproj).has_value());
+    CHECK(*backend->path_for(VisualModelArtifactKind::Mmproj) == legacy_mmproj_path);
+}
+
 TEST_CASE("VisualLlmRuntime does not misattribute a legacy generic mmproj from another backend") {
     TempDir home_dir;
     EnvVarGuard home_guard("HOME", home_dir.path().string());

@@ -31,14 +31,30 @@ bool is_shared_legacy_filename(const std::filesystem::path& candidate)
     return filename == "mmproj-model.gguf" || filename == "mmproj-model-f16.gguf";
 }
 
-bool accept_legacy_candidate(const std::filesystem::path& candidate, std::string_view download_url)
+bool is_default_llava_mmproj_without_metadata_compatible(
+    const VisualModelDescriptor& backend,
+    const VisualModelArtifactDescriptor& artifact,
+    const std::filesystem::path& candidate)
+{
+    if (artifact.kind != VisualModelArtifactKind::Mmproj || !is_shared_legacy_filename(candidate)) {
+        return false;
+    }
+
+    return std::string_view(backend.id) == std::string_view(default_visual_model_descriptor().id);
+}
+
+bool accept_legacy_candidate(const VisualModelDescriptor& backend,
+                             const VisualModelArtifactDescriptor& artifact,
+                             const std::filesystem::path& candidate,
+                             std::string_view download_url)
 {
     const auto cached_url = read_cached_download_url(candidate);
     if (cached_url.has_value()) {
         return std::string_view(*cached_url) == download_url;
     }
 
-    return !is_shared_legacy_filename(candidate);
+    return !is_shared_legacy_filename(candidate)
+        || is_default_llava_mmproj_without_metadata_compatible(backend, artifact, candidate);
 }
 
 std::optional<std::filesystem::path> legacy_path_from_url(std::string_view download_url)
@@ -163,7 +179,7 @@ std::optional<std::filesystem::path> resolve_visual_artifact_path(
 
     if (const auto legacy_path = legacy_path_from_url(download_url);
         legacy_path.has_value() && std::filesystem::exists(*legacy_path)
-        && accept_legacy_candidate(*legacy_path, download_url)) {
+        && accept_legacy_candidate(backend, artifact, *legacy_path, download_url)) {
         return legacy_path;
     }
 
@@ -173,7 +189,7 @@ std::optional<std::filesystem::path> resolve_visual_artifact_path(
         if (!std::filesystem::exists(candidate)) {
             continue;
         }
-        if (accept_legacy_candidate(candidate, download_url)) {
+        if (accept_legacy_candidate(backend, artifact, candidate, download_url)) {
             return candidate;
         }
     }

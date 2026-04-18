@@ -241,4 +241,37 @@ TEST_CASE("Visual dialog does not mark another backend's legacy generic mmproj a
     REQUIRE(gemma_mmproj_entry.status_label != nullptr);
     CHECK(gemma_mmproj_entry.status_label->text() == QStringLiteral("Download required."));
 }
+
+TEST_CASE("Visual dialog accepts the legacy default LLaVA generic mmproj without metadata") {
+    EnvVarGuard platform_guard("QT_QPA_PLATFORM", std::string("offscreen"));
+    QtAppContext qt_context;
+
+    TempDir temp;
+    EnvVarGuard home_guard("HOME", temp.path().string());
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
+
+    const std::string model_url = "https://llava.example/models/llava-model.gguf";
+    const std::string mmproj_url = "https://llava.example/models/mmproj-model-f16.gguf";
+
+    EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
+    EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", mmproj_url);
+    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
+    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
+    EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
+    EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
+
+    const auto legacy_mmproj_path =
+        std::filesystem::path(Utils::make_default_path_to_file_from_download_url(mmproj_url));
+    write_bytes(legacy_mmproj_path, 16);
+
+    Settings settings;
+    settings.set_visual_model_id("llava-v1.6-mistral-7b");
+
+    LLMSelectionDialog dialog(settings);
+
+    const auto llava_mmproj_entry =
+        LLMSelectionDialogTestAccess::visual_entry_for_env_var(dialog, "LLAVA_MMPROJ_URL");
+    REQUIRE(llava_mmproj_entry.status_label != nullptr);
+    CHECK(llava_mmproj_entry.status_label->text() == QStringLiteral("Model ready."));
+}
 #endif
