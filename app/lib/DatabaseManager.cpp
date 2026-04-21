@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -540,6 +541,144 @@ struct CanonicalCategoryLabel {
     std::string display;
 };
 
+struct SemanticFamily {
+    std::string canonical_category_normalized;
+    std::string canonical_category_display;
+    std::string parent_category_normalized;
+    std::vector<std::string_view> aliases;
+    std::vector<std::string_view> parent_generic_aliases;
+};
+
+bool is_generic_family_subcategory(const std::string& normalized_subcategory,
+                                   const std::string& normalized_category,
+                                   const SemanticFamily& family) {
+    if (normalized_subcategory.empty()) {
+        return true;
+    }
+
+    static const std::unordered_set<std::string> kGeneric = {
+        "general",
+        "misc",
+        "miscellaneous",
+        "other",
+        "others",
+        "uncategorized",
+        "document",
+        "documents",
+        "doc",
+        "docs"
+    };
+
+    if (kGeneric.contains(normalized_subcategory)) {
+        return true;
+    }
+
+    const std::string stripped_subcategory = strip_trailing_stopwords(normalized_subcategory);
+    if (kGeneric.contains(stripped_subcategory)) {
+        return true;
+    }
+
+    if (std::any_of(family.aliases.begin(),
+                    family.aliases.end(),
+                    [&](std::string_view alias) {
+                        return normalized_subcategory == alias || stripped_subcategory == alias;
+                    })) {
+        return true;
+    }
+
+    if (stripped_subcategory == strip_trailing_stopwords(normalized_category) ||
+        stripped_subcategory == family.canonical_category_normalized ||
+        stripped_subcategory == strip_trailing_stopwords(family.parent_category_normalized)) {
+        return true;
+    }
+
+    return std::any_of(family.parent_generic_aliases.begin(),
+                       family.parent_generic_aliases.end(),
+                       [&](std::string_view alias) { return stripped_subcategory == alias; });
+}
+
+const std::vector<SemanticFamily>& semantic_families() {
+    static const std::vector<SemanticFamily> kFamilies = {
+        {
+            "backups", "Backups", "archives",
+            {"backup", "backups", "backup file", "backup files"},
+            {"archive", "archives"}
+        },
+        {
+            "ebooks", "Ebooks", "books",
+            {"ebook", "ebooks", "e book", "e books"},
+            {"book", "books"}
+        },
+        {
+            "guides", "Guides", "documents",
+            {"guide", "guides"},
+            {"document", "documents", "doc", "docs", "text", "texts", "paper", "papers", "office file", "office files"}
+        },
+        {
+            "licenses", "Licenses", "documents",
+            {"license", "licenses", "licence", "licences"},
+            {"document", "documents", "doc", "docs", "text", "texts", "paper", "papers", "office file", "office files"}
+        },
+        {
+            "manuals", "Manuals", "documents",
+            {"manual", "manuals"},
+            {"document", "documents", "doc", "docs", "text", "texts", "paper", "papers", "office file", "office files"}
+        },
+        {
+            "presentations", "Presentations", "documents",
+            {"presentation", "presentations", "slide deck", "slide decks", "deck", "decks", "slides"},
+            {"document", "documents", "doc", "docs", "text", "texts", "paper", "papers", "office file", "office files"}
+        },
+        {
+            "spreadsheets", "Spreadsheets", "documents",
+            {"spreadsheet", "spreadsheets", "worksheet", "worksheets"},
+            {"document", "documents", "doc", "docs", "text", "texts", "paper", "papers", "office file", "office files", "table", "tables"}
+        },
+        {
+            "drivers", "Drivers", "software",
+            {"driver", "drivers"},
+            {"software", "application", "applications", "app", "apps", "program", "programs"}
+        },
+        {
+            "firmware", "Firmware", "software",
+            {"firmware"},
+            {"software", "application", "applications", "app", "apps", "program", "programs"}
+        },
+        {
+            "installers", "Installers", "software",
+            {"installer", "installers", "installation", "installations",
+             "installation file", "installation files",
+             "software installation", "software installations",
+             "software installation file", "software installation files",
+             "setup", "setups", "setup file", "setup files"},
+            {"software", "application", "applications", "app", "apps", "program", "programs"}
+        }
+    };
+    return kFamilies;
+}
+
+bool semantic_family_matches_alias(const SemanticFamily& family, const std::string& normalized_label) {
+    if (normalized_label.empty()) {
+        return false;
+    }
+
+    const std::string stripped = strip_trailing_stopwords(normalized_label);
+    return std::any_of(family.aliases.begin(),
+                       family.aliases.end(),
+                       [&](std::string_view alias) {
+                           return normalized_label == alias || stripped == alias;
+                       });
+}
+
+const SemanticFamily* find_semantic_family(const std::string& normalized_label) {
+    for (const auto& family : semantic_families()) {
+        if (semantic_family_matches_alias(family, normalized_label)) {
+            return &family;
+        }
+    }
+    return nullptr;
+}
+
 bool is_image_like_label(const std::string& normalized) {
     if (normalized.empty()) {
         return false;
@@ -565,10 +704,6 @@ CanonicalCategoryLabel canonicalize_category_label(const std::string& normalized
     static const std::unordered_map<std::string, CanonicalCategoryLabel> kCategorySynonyms = {
         {"archive", {"archives", "Archives"}},
         {"archives", {"archives", "Archives"}},
-        {"backup", {"archives", "Archives"}},
-        {"backups", {"archives", "Archives"}},
-        {"backup file", {"archives", "Archives"}},
-        {"backup files", {"archives", "Archives"}},
 
         {"document", {"documents", "Documents"}},
         {"documents", {"documents", "Documents"}},
@@ -578,10 +713,6 @@ CanonicalCategoryLabel canonicalize_category_label(const std::string& normalized
         {"texts", {"documents", "Documents"}},
         {"paper", {"documents", "Documents"}},
         {"papers", {"documents", "Documents"}},
-        {"report", {"documents", "Documents"}},
-        {"reports", {"documents", "Documents"}},
-        {"spreadsheet", {"documents", "Documents"}},
-        {"spreadsheets", {"documents", "Documents"}},
         {"table", {"documents", "Documents"}},
         {"tables", {"documents", "Documents"}},
         {"office file", {"documents", "Documents"}},
@@ -594,20 +725,6 @@ CanonicalCategoryLabel canonicalize_category_label(const std::string& normalized
         {"apps", {"software", "Software"}},
         {"program", {"software", "Software"}},
         {"programs", {"software", "Software"}},
-        {"installer", {"software", "Software"}},
-        {"installers", {"software", "Software"}},
-        {"installation", {"software", "Software"}},
-        {"installations", {"software", "Software"}},
-        {"installation file", {"software", "Software"}},
-        {"installation files", {"software", "Software"}},
-        {"software installation", {"software", "Software"}},
-        {"software installations", {"software", "Software"}},
-        {"software installation file", {"software", "Software"}},
-        {"software installation files", {"software", "Software"}},
-        {"setup", {"software", "Software"}},
-        {"setups", {"software", "Software"}},
-        {"setup file", {"software", "Software"}},
-        {"setup files", {"software", "Software"}},
         {"update", {"software", "Software"}},
         {"updates", {"software", "Software"}},
         {"software update", {"software", "Software"}},
@@ -921,6 +1038,23 @@ DatabaseManager::resolve_category(const std::string &category,
     if (!canonical_category.display.empty()) {
         trimmed_category = canonical_category.display;
     }
+
+    if (const SemanticFamily* family_from_category = find_semantic_family(norm_category)) {
+        trimmed_category = family_from_category->canonical_category_display;
+        norm_category = family_from_category->canonical_category_normalized;
+        if (is_generic_family_subcategory(norm_subcategory, norm_category, *family_from_category)) {
+            trimmed_subcategory = "General";
+            norm_subcategory = normalize_label(trimmed_subcategory);
+        }
+    } else if (const SemanticFamily* family_from_subcategory = find_semantic_family(norm_subcategory);
+               family_from_subcategory &&
+               family_from_subcategory->parent_category_normalized == norm_category) {
+        trimmed_category = family_from_subcategory->canonical_category_display;
+        norm_category = family_from_subcategory->canonical_category_normalized;
+        trimmed_subcategory = "General";
+        norm_subcategory = normalize_label(trimmed_subcategory);
+    }
+
     const std::string match_subcategory = strip_trailing_stopwords(norm_subcategory);
     std::string key = make_key(norm_category, match_subcategory);
 

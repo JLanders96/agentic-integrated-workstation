@@ -29,9 +29,9 @@ AI File Sorter is a cross-platform desktop application that uses AI to organize 
 
 The app can analyze picture files locally and suggest meaningful, human-readable names. For example, a generic file like IMG_2048.jpg can be renamed to something descriptive such as clouds_over_lake.jpg. It can also analyze supported document files and propose clearer names based on their text content. AI File Sorter can also clean up messy audio and video filenames by using the metadata already stored inside supported media files. If tags such as year, artist, album, or title are available, the app can turn them into a clear suggestion like `2024_artist_album_title.mp3`, which you can review, edit, or ignore before any change is applied.
 
-AI File Sorter helps tidy up cluttered folders such as Downloads, external drives, or NAS storage by automatically grouping files based on their names, extensions, folder context, and learned organization patterns.
+AI File Sorter helps tidy up cluttered folders such as Downloads, external drives, or NAS storage by automatically grouping files based on their names, extensions, folder context, taxonomy normalization, and cached categorization results.
 
-Instead of relying on fixed rules, the app gradually builds an internal understanding of how your files are typically organized and named. This allows it to make more consistent categorization and naming suggestions over time, while still letting you review and adjust everything before anything is applied.
+Instead of relying only on fixed rules, the app combines LLM output with taxonomy matching, optional whitelists, and consistency hints from the current session and recent cached assignments for similar file types. This helps keep labels more consistent over time, while still letting you review and adjust everything before anything is applied.
 
 Categories (and optional subcategories) are suggested for each file, and for supported file types, rename suggestions are provided as well. Once you confirm, the required folders are created automatically and files are sorted accordingly.
 
@@ -133,7 +133,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 - **Qt6 Interface**: Lightweight and responsive UI with refreshed menus and icons.
 - **Interface languages**: English, Dutch, French, German, Italian, Korean, Spanish, and Turkish.
 - **Cross-Platform Compatibility**: Works on Windows, macOS, and Linux.
-- **Local Database Caching**: Speeds up repeated categorization and minimizes remote LLM usage costs.
+- **Local Database Caching**: Speeds up repeated categorization, preserves approved labels and rename suggestions, and provides recent-category hints for consistency.
 - **Sorting Preview**: See how files will be organized before confirming changes.
 - **Dry run** / preview-only mode to inspect planned moves without touching files.
 - **Persistent Undo** ("Undo last run") even after closing the sort dialog.
@@ -799,7 +799,7 @@ Example PowerShell launch:
 
 ## Categorization cache database
 
-AI File Sorter stores categorization results in a local SQLite database next to `config.ini` (the base directory can be overridden via `AI_FILE_SORTER_CONFIG_DIR`). This cache allows the app to skip already-processed files and preserve rename suggestions between runs.
+AI File Sorter stores categorization results in a local SQLite database next to `config.ini` (the base directory can be overridden via `AI_FILE_SORTER_CONFIG_DIR`). This cache allows the app to skip already-processed files, preserve rename suggestions between runs, and reuse recent category/subcategory assignments as consistency hints.
 
 What is stored:
 
@@ -808,6 +808,8 @@ What is stored:
 - Suggested filename (for picture and document rename suggestions).
 - Rename-only flag (used when picture/document rename-only modes are enabled).
 - Rename-applied flag (marks when a rename was executed so it is not offered again).
+
+This cache is used as lightweight memory for consistency, not as model training. In **More consistent** mode, the app can feed recent assignments for similar file types back into the prompt so labels trend toward the same taxonomy over time.
 
 If you rename or move a file from the Review dialog, the cache entry is updated to the new name. Already-renamed picture files are skipped for visual analysis and rename suggestions on later runs. In the Review dialog, those already-renamed rows are hidden when rename-only is enabled, but they stay visible when categorization is enabled so you can still move them into category folders. To reset a folder's cache, accept the recategorization prompt. To clear the full categorization cache, image-location cache, or logs, use **Settings -> Clear cache**. You can also delete the cache file directly (or point `CATEGORIZATION_CACHE_FILE` to a new filename).
 

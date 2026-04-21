@@ -104,19 +104,20 @@ TEST_CASE("DatabaseManager normalizes subcategory stopword suffixes for taxonomy
     CHECK(photos.subcategory == "Photos");
 }
 
-TEST_CASE("DatabaseManager normalizes backup category synonyms for taxonomy matching") {
+TEST_CASE("DatabaseManager preserves the Backups family under archive-like labels") {
     TempDir base_dir;
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
     DatabaseManager db(base_dir.path().string());
 
-    auto archives = db.resolve_category("Archives", "General");
+    auto archives_backups = db.resolve_category("Archives", "Backups");
     auto backup = db.resolve_category("backup files", "General");
 
-    REQUIRE(archives.taxonomy_id > 0);
-    CHECK(backup.taxonomy_id == archives.taxonomy_id);
-    CHECK(backup.category == archives.category);
-    CHECK(backup.category == "Archives");
+    REQUIRE(archives_backups.taxonomy_id > 0);
+    CHECK(backup.taxonomy_id == archives_backups.taxonomy_id);
+    CHECK(backup.category == "Backups");
     CHECK(backup.subcategory == "General");
+    CHECK(archives_backups.category == "Backups");
+    CHECK(archives_backups.subcategory == "General");
 }
 
 TEST_CASE("DatabaseManager normalizes image category synonyms and image media aliases") {
@@ -144,21 +145,63 @@ TEST_CASE("DatabaseManager normalizes document category synonyms for taxonomy ma
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
     DatabaseManager db(base_dir.path().string());
 
-    auto documents = db.resolve_category("Documents", "Reports");
-    auto texts = db.resolve_category("Texts", "Reports");
-    auto papers = db.resolve_category("Papers", "Reports");
-    auto spreadsheets = db.resolve_category("Spreadsheets", "Reports");
+    auto documents = db.resolve_category("Documents", "Research");
+    auto texts = db.resolve_category("Texts", "Research");
+    auto papers = db.resolve_category("Papers", "Research");
 
     REQUIRE(documents.taxonomy_id > 0);
     CHECK(texts.taxonomy_id == documents.taxonomy_id);
     CHECK(papers.taxonomy_id == documents.taxonomy_id);
-    CHECK(spreadsheets.taxonomy_id == documents.taxonomy_id);
+    CHECK(documents.category == "Documents");
     CHECK(texts.category == "Documents");
     CHECK(papers.category == "Documents");
-    CHECK(spreadsheets.category == "Documents");
 }
 
-TEST_CASE("DatabaseManager normalizes installer and update category synonyms for taxonomy matching") {
+TEST_CASE("DatabaseManager normalizes generic Documents labels into preserved document families when the subcategory is explicit") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    DatabaseManager db(base_dir.path().string());
+
+    auto documents_manuals = db.resolve_category("Documents", "Manuals");
+    auto manuals_general = db.resolve_category("Manuals", "General");
+    auto documents_spreadsheets = db.resolve_category("Documents", "Spreadsheets");
+    auto spreadsheets_general = db.resolve_category("Spreadsheets", "General");
+
+    REQUIRE(documents_manuals.taxonomy_id > 0);
+    CHECK(documents_manuals.taxonomy_id == manuals_general.taxonomy_id);
+    CHECK(documents_manuals.category == "Manuals");
+    CHECK(documents_manuals.subcategory == "General");
+
+    REQUIRE(documents_spreadsheets.taxonomy_id > 0);
+    CHECK(documents_spreadsheets.taxonomy_id == spreadsheets_general.taxonomy_id);
+    CHECK(documents_spreadsheets.category == "Spreadsheets");
+    CHECK(documents_spreadsheets.subcategory == "General");
+}
+
+TEST_CASE("DatabaseManager keeps specialized document-family categories and normalizes generic subcategories") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    DatabaseManager db(base_dir.path().string());
+
+    auto documents_manuals = db.resolve_category("Documents", "Manuals");
+    auto manuals_general = db.resolve_category("Manuals", "General");
+    auto manuals_empty = db.resolve_category("Manuals", "");
+    auto guides_general = db.resolve_category("Guides", "General");
+
+    REQUIRE(documents_manuals.taxonomy_id > 0);
+    CHECK(manuals_general.taxonomy_id == documents_manuals.taxonomy_id);
+    CHECK(manuals_empty.taxonomy_id == documents_manuals.taxonomy_id);
+    CHECK(manuals_general.category == "Manuals");
+    CHECK(manuals_empty.category == "Manuals");
+    CHECK(manuals_general.subcategory == "General");
+    CHECK(manuals_empty.subcategory == "General");
+
+    CHECK(guides_general.category == "Guides");
+    CHECK(guides_general.subcategory == "General");
+    CHECK(guides_general.taxonomy_id != documents_manuals.taxonomy_id);
+}
+
+TEST_CASE("DatabaseManager preserves the Installers family under software-like labels") {
     TempDir base_dir;
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
     DatabaseManager db(base_dir.path().string());
@@ -166,16 +209,26 @@ TEST_CASE("DatabaseManager normalizes installer and update category synonyms for
     auto software = db.resolve_category("Software", "Installers");
     auto installers = db.resolve_category("Installers", "Installers");
     auto setup_files = db.resolve_category("Setup files", "Installers");
-    auto updates = db.resolve_category("Software Update", "Installers");
-    auto patches = db.resolve_category("Patches", "Installers");
 
     REQUIRE(software.taxonomy_id > 0);
     CHECK(installers.taxonomy_id == software.taxonomy_id);
     CHECK(setup_files.taxonomy_id == software.taxonomy_id);
-    CHECK(updates.taxonomy_id == software.taxonomy_id);
-    CHECK(patches.taxonomy_id == software.taxonomy_id);
-    CHECK(installers.category == "Software");
-    CHECK(setup_files.category == "Software");
+    CHECK(installers.category == "Installers");
+    CHECK(setup_files.category == "Installers");
+    CHECK(software.category == "Installers");
+    CHECK(software.subcategory == "General");
+}
+
+TEST_CASE("DatabaseManager keeps non-family software semantics under Software") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    DatabaseManager db(base_dir.path().string());
+
+    auto updates = db.resolve_category("Software Update", "General");
+    auto patches = db.resolve_category("Patches", "General");
+
+    REQUIRE(updates.taxonomy_id > 0);
     CHECK(updates.category == "Software");
     CHECK(patches.category == "Software");
+    CHECK(patches.taxonomy_id == updates.taxonomy_id);
 }
