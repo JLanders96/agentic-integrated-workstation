@@ -17,6 +17,7 @@
 
 class Settings;
 class ILLMClient;
+class UserLearningStore;
 namespace spdlog { class logger; }
 
 /**
@@ -47,7 +48,14 @@ public:
      */
     CategorizationService(Settings& settings,
                           DatabaseManager& db_manager,
-                          std::shared_ptr<spdlog::logger> core_logger);
+                          std::shared_ptr<spdlog::logger> core_logger,
+                          UserLearningStore* user_learning_store = nullptr);
+
+    /**
+     * @brief Updates the optional learned-behavior store used for candidate retrieval.
+     * @param store User-learning store, or nullptr to disable retrieval.
+     */
+    void set_user_learning_store(UserLearningStore* store) { user_learning_store_ = store; }
 
     /**
      * @brief Verifies that required remote credentials are configured.
@@ -267,6 +275,41 @@ private:
      */
     std::string build_whitelist_context() const;
     /**
+     * @brief Builds the effective whitelist prompt block for a specific file context.
+     * @param prompt_name Name used in the categorization prompt.
+     * @param prompt_path Path/context payload used in the categorization prompt.
+     * @return Full whitelist block for small lists or retrieved candidates for large lists.
+     */
+    std::string build_whitelist_context_for_prompt(const std::string& prompt_name,
+                                                   const std::string& prompt_path) const;
+    /**
+     * @brief Builds a compact candidate block for very large whitelists.
+     * @param prompt_name Name used in the categorization prompt.
+     * @param prompt_path Path/context payload used in the categorization prompt.
+     * @return Retrieved whitelist candidate prompt section.
+     */
+    std::string build_large_whitelist_candidate_context(const std::string& prompt_name,
+                                                        const std::string& prompt_path) const;
+    /**
+     * @brief Builds a prompt block with relevant user-learned category candidates.
+     * @param prompt_name Name used in the categorization prompt.
+     * @param prompt_path Path/context payload used in the categorization prompt.
+     * @return Learned candidate prompt section.
+     */
+    std::string build_learned_candidate_context(const std::string& prompt_name,
+                                                const std::string& prompt_path) const;
+    /**
+     * @brief Prefer a strong user-learned candidate over generic model output.
+     * @param resolved Model-resolved category/subcategory before learned preference.
+     * @param prompt_name Name used in the categorization prompt.
+     * @param prompt_path Path/context payload used in the categorization prompt.
+     * @return Original or learned-preferred resolved category.
+     */
+    DatabaseManager::ResolvedCategory prefer_learned_candidate_for_generic_result(
+        const DatabaseManager::ResolvedCategory& resolved,
+        const std::string& prompt_name,
+        const std::string& prompt_path) const;
+    /**
      * @brief Builds a prompt instruction for non-English category languages.
      * @return Language instruction block or empty string.
      */
@@ -394,6 +437,7 @@ private:
     Settings& settings;
     DatabaseManager& db_manager;
     std::shared_ptr<spdlog::logger> core_logger;
+    UserLearningStore* user_learning_store_{nullptr};
 };
 
 #endif

@@ -5,6 +5,7 @@
 #include "DatabaseManager.hpp"
 #include "ILLMClient.hpp"
 #include "LLMErrors.hpp"
+#include "UserLearningStore.hpp"
 #include "Utils.hpp"
 
 #if __has_include(<jsoncpp/json/json.h>)
@@ -33,8 +34,12 @@ constexpr const char* kLocalTimeoutEnv = "AI_FILE_SORTER_LOCAL_LLM_TIMEOUT";
 constexpr const char* kRemoteTimeoutEnv = "AI_FILE_SORTER_REMOTE_LLM_TIMEOUT";
 constexpr const char* kCustomTimeoutEnv = "AI_FILE_SORTER_CUSTOM_LLM_TIMEOUT";
 constexpr size_t kMaxConsistencyHints = 5;
+constexpr size_t kLargeWhitelistPromptThreshold = 30;
+constexpr size_t kMaxLargeWhitelistPromptCandidates = 8;
 constexpr size_t kMaxLabelLength = 80;
 constexpr std::string_view kImageDescriptionMarker = "\nImage description: ";
+constexpr std::string_view kDocumentSummaryMarker = "\nDocument summary: ";
+constexpr int kMinimumLearnedPreferenceScore = 12;
 std::string to_lower_copy_str(std::string value);
 
 std::string trim_copy(std::string value) {
@@ -324,8 +329,104 @@ bool contains_any_substring(const std::string& haystack,
     return false;
 }
 
+std::vector<std::string> tokenize_prompt_text(const std::string& text)
+{
+    std::vector<std::string> tokens;
+    std::string current;
+    for (unsigned char ch : text) {
+        if (std::isalnum(ch) || ch >= 128) {
+            current.push_back(ch < 128 ? static_cast<char>(std::tolower(ch)) : static_cast<char>(ch));
+            continue;
+        }
+        if (!current.empty()) {
+            tokens.push_back(std::move(current));
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(std::move(current));
+    }
+    tokens.erase(std::remove_if(tokens.begin(),
+                                tokens.end(),
+                                [](const std::string& token) {
+                                    return token.size() < 2;
+                                }),
+                 tokens.end());
+    return tokens;
+}
+
+int score_label_against_query(const std::string& label, const std::vector<std::string>& query_tokens)
+{
+    if (label.empty() || query_tokens.empty()) {
+        return 0;
+    }
+
+    const std::string lowered_label = to_lower_copy_str(label);
+    int score = 0;
+    for (const auto& token : query_tokens) {
+        if (lowered_label == token) {
+            score += 6;
+        } else if (lowered_label.find(token) != std::string::npos) {
+            score += 3;
+        }
+    }
+    return score;
+}
+
+std::vector<std::string> rank_allowed_labels_for_query(const std::vector<std::string>& labels,
+                                                       const std::string& query_text,
+                                                       std::size_t limit)
+{
+    struct ScoredLabel {
+        std::string label;
+        int score{0};
+        std::size_t order{0};
+    };
+
+    const auto query_tokens = tokenize_prompt_text(query_text);
+    std::vector<ScoredLabel> scored;
+    scored.reserve(labels.size());
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        const int score = score_label_against_query(labels[i], query_tokens);
+        if (score > 0) {
+            scored.push_back(ScoredLabel{labels[i], score, i});
+        }
+    }
+
+    std::sort(scored.begin(), scored.end(), [](const auto& lhs, const auto& rhs) {
+        if (lhs.score != rhs.score) {
+            return lhs.score > rhs.score;
+        }
+        return lhs.order < rhs.order;
+    });
+
+    std::vector<std::string> ranked;
+    ranked.reserve(std::min(limit, scored.size()));
+    for (const auto& entry : scored) {
+        if (ranked.size() == limit) {
+            break;
+        }
+        if (std::find(ranked.begin(), ranked.end(), entry.label) == ranked.end()) {
+            ranked.push_back(entry.label);
+        }
+    }
+    return ranked;
+}
+
 bool has_image_description_context(const std::string& prompt_path) {
     return prompt_path.find(kImageDescriptionMarker) != std::string::npos;
+}
+
+std::string extract_learning_context_text(const std::string& prompt_path) {
+    if (prompt_path.find(kImageDescriptionMarker) == std::string::npos &&
+        prompt_path.find(kDocumentSummaryMarker) == std::string::npos) {
+        return {};
+    }
+    const auto newline = prompt_path.find('\n');
+    if (newline == std::string::npos || newline + 1 >= prompt_path.size()) {
+        return {};
+    }
+    return trim_copy(prompt_path.substr(newline + 1));
 }
 
 std::string extract_image_description_text(const std::string& prompt_path) {
@@ -354,7 +455,40 @@ bool is_screenshot_like_image_context(const std::string& prompt_name,
                "screenshot", "screen capture", "user interface", "ui", "dashboard",
                "webpage", "website", "admin panel", "browser window", "application window",
                "app interface", "desktop interface", "form", "layout", "mockup", "wireframe"
-           });
+	           });
+}
+
+bool is_low_information_label(const std::string& label) {
+    const std::string normalized = to_lower_copy_str(trim_copy(label));
+    return normalized.empty() ||
+           normalized == "documents" ||
+           normalized == "document" ||
+           normalized == "files" ||
+           normalized == "file" ||
+           normalized == "general" ||
+           normalized == "miscellaneous" ||
+           normalized == "misc" ||
+           normalized == "other" ||
+           normalized == "uncategorized";
+}
+
+// Returns true when the value appears in the allowed list (case-insensitive).
+bool is_allowed(const std::string& value, const std::vector<std::string>& allowed) {
+    if (allowed.empty()) {
+        return true;
+    }
+    const std::string norm = to_lower_copy_str(value);
+    for (const auto& item : allowed) {
+        if (to_lower_copy_str(item) == norm) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Returns the first allowed entry or an empty string when the list is empty.
+std::string first_allowed_or_blank(const std::vector<std::string>& allowed) {
+    return allowed.empty() ? std::string() : allowed.front();
 }
 
 std::vector<std::string> split_segments(const std::string& line, std::string_view delimiter) {
@@ -601,10 +735,12 @@ LabelValidationResult validate_labels(const std::string& category, const std::st
 
 CategorizationService::CategorizationService(Settings& settings,
                                              DatabaseManager& db_manager,
-                                             std::shared_ptr<spdlog::logger> core_logger)
+                                             std::shared_ptr<spdlog::logger> core_logger,
+                                             UserLearningStore* user_learning_store)
     : settings(settings),
       db_manager(db_manager),
-      core_logger(std::move(core_logger)) {}
+      core_logger(std::move(core_logger)),
+      user_learning_store_(user_learning_store) {}
 
 bool CategorizationService::ensure_remote_credentials(std::string* error_message) const
 {
@@ -746,6 +882,206 @@ std::string CategorizationService::build_whitelist_context() const
     return oss.str();
 }
 
+std::string CategorizationService::build_whitelist_context_for_prompt(const std::string& prompt_name,
+                                                                      const std::string& prompt_path) const
+{
+    const auto cats = settings.get_allowed_categories();
+    const auto subs = settings.get_allowed_subcategories();
+    if (cats.size() + subs.size() <= kLargeWhitelistPromptThreshold) {
+        return build_whitelist_context();
+    }
+    return build_large_whitelist_candidate_context(prompt_name, prompt_path);
+}
+
+std::string CategorizationService::build_large_whitelist_candidate_context(const std::string& prompt_name,
+                                                                          const std::string& prompt_path) const
+{
+    const auto cats = settings.get_allowed_categories();
+    const auto subs = settings.get_allowed_subcategories();
+    if (cats.empty()) {
+        return build_whitelist_context();
+    }
+
+    std::string query = prompt_name;
+    if (!prompt_path.empty()) {
+        query += "\n";
+        query += prompt_path;
+    }
+
+    std::vector<CategoryPair> candidates;
+    candidates.reserve(kMaxLargeWhitelistPromptCandidates);
+    const auto allowed_contains = [](const std::string& value, const std::vector<std::string>& allowed) {
+        if (allowed.empty()) {
+            return true;
+        }
+        const std::string normalized = to_lower_copy_str(value);
+        return std::any_of(allowed.begin(), allowed.end(), [&normalized](const std::string& entry) {
+            return to_lower_copy_str(entry) == normalized;
+        });
+    };
+    const auto append_candidate = [&](std::string category, std::string subcategory) {
+        category = Utils::sanitize_path_label(std::move(category));
+        subcategory = Utils::sanitize_path_label(std::move(subcategory));
+        if (category.empty() || !allowed_contains(category, cats)) {
+            return;
+        }
+        if (!subcategory.empty() && !allowed_contains(subcategory, subs)) {
+            subcategory.clear();
+        }
+        const CategoryPair pair{category, subcategory};
+        if (std::find(candidates.begin(), candidates.end(), pair) == candidates.end()) {
+            candidates.push_back(pair);
+        }
+    };
+
+    if (user_learning_store_ && user_learning_store_->is_open()) {
+        for (const auto& candidate :
+             user_learning_store_->retrieve_taxonomy_candidates(query, kMaxLargeWhitelistPromptCandidates * 2)) {
+            append_candidate(candidate.category, candidate.subcategory);
+            if (candidates.size() == kMaxLargeWhitelistPromptCandidates) {
+                break;
+            }
+        }
+    }
+
+    if (candidates.size() < kMaxLargeWhitelistPromptCandidates) {
+        for (const auto& category :
+             rank_allowed_labels_for_query(cats, query, kMaxLargeWhitelistPromptCandidates)) {
+            append_candidate(category, {});
+            if (candidates.size() == kMaxLargeWhitelistPromptCandidates) {
+                break;
+            }
+        }
+    }
+
+    std::ostringstream oss;
+    oss << "Selected whitelist is large, so only the most relevant allowed candidates are shown.\n";
+    if (!candidates.empty()) {
+        oss << "Allowed category candidates (pick exactly one when it fits):\n";
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            oss << (i + 1) << ") " << candidates[i].first;
+            if (!candidates[i].second.empty()) {
+                oss << " : " << candidates[i].second;
+            }
+            oss << "\n";
+        }
+    } else {
+        oss << "No strong whitelist candidate matched this file. Choose the best category from the selected whitelist if you know it; otherwise suggest a new category for review.\n";
+    }
+
+    if (!subs.empty()) {
+        const auto ranked_subs = rank_allowed_labels_for_query(subs, query, kMaxLargeWhitelistPromptCandidates);
+        if (!ranked_subs.empty()) {
+            oss << "Allowed subcategory candidates:\n";
+            for (std::size_t i = 0; i < ranked_subs.size(); ++i) {
+                oss << (i + 1) << ") " << ranked_subs[i] << "\n";
+            }
+        } else {
+            oss << "Allowed subcategories are restricted by the selected whitelist, but no strong subcategory candidate matched this file.\n";
+        }
+    } else {
+        oss << "Allowed subcategories: any (pick a specific, relevant subcategory; do not repeat the main category).";
+    }
+
+    return oss.str();
+}
+
+std::string CategorizationService::build_learned_candidate_context(const std::string& prompt_name,
+                                                                   const std::string& prompt_path) const
+{
+    if (!user_learning_store_ || !user_learning_store_->is_open()) {
+        return std::string();
+    }
+
+    std::string query = prompt_name;
+    if (!prompt_path.empty()) {
+        query += "\n";
+        query += prompt_path;
+    }
+
+    const auto candidates = user_learning_store_->retrieve_taxonomy_candidates(query, 5);
+    if (candidates.empty()) {
+        return std::string();
+    }
+
+    std::ostringstream oss;
+    oss << "User-learned category candidates from approved behavior and whitelists:\n";
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+        const auto& candidate = candidates[i];
+        oss << (i + 1) << ") " << candidate.category;
+        if (!candidate.subcategory.empty()) {
+            oss << " : " << candidate.subcategory;
+        } else {
+            oss << " : choose a specific relevant subcategory";
+        }
+        oss << "\n";
+    }
+    oss << "Prefer one of these user-learned candidates when it fits the file. "
+	           "If none fits, choose a better category and subcategory for review.";
+    return oss.str();
+}
+
+DatabaseManager::ResolvedCategory CategorizationService::prefer_learned_candidate_for_generic_result(
+    const DatabaseManager::ResolvedCategory& resolved,
+    const std::string& prompt_name,
+    const std::string& prompt_path) const
+{
+    if (!user_learning_store_ || !user_learning_store_->is_open()) {
+        return resolved;
+    }
+
+    std::string query = prompt_name;
+    if (!prompt_path.empty()) {
+        query += "\n";
+        query += prompt_path;
+    }
+
+    const auto candidates = user_learning_store_->retrieve_taxonomy_candidates(query, 1);
+    if (candidates.empty() || candidates.front().score < kMinimumLearnedPreferenceScore) {
+        return resolved;
+    }
+
+    const auto& candidate = candidates.front();
+    const auto allowed_categories = settings.get_allowed_categories();
+    const auto allowed_subcategories = settings.get_allowed_subcategories();
+    if (settings.get_use_whitelist() && !is_allowed(candidate.category, allowed_categories)) {
+        return resolved;
+    }
+    if (settings.get_use_whitelist() &&
+        !candidate.subcategory.empty() &&
+        !is_allowed(candidate.subcategory, allowed_subcategories)) {
+        return resolved;
+    }
+
+    const bool generic_category = is_low_information_label(resolved.category);
+    const bool same_category = to_lower_copy_str(resolved.category) ==
+                               to_lower_copy_str(candidate.category);
+    const bool generic_subcategory =
+        is_low_information_label(resolved.subcategory) ||
+        to_lower_copy_str(resolved.category) == to_lower_copy_str(resolved.subcategory);
+    if (!generic_category && !(same_category && generic_subcategory)) {
+        return resolved;
+    }
+
+    std::string learned_subcategory = candidate.subcategory;
+    if (learned_subcategory.empty()) {
+        learned_subcategory = resolved.subcategory.empty() ? "General" : resolved.subcategory;
+    }
+    if (to_lower_copy_str(candidate.category) == to_lower_copy_str(learned_subcategory)) {
+        learned_subcategory = "General";
+    }
+
+    auto learned = db_manager.resolve_category(candidate.category, learned_subcategory);
+    if (core_logger) {
+        core_logger->info("Preferred learned category '{}'/'{}' over generic result '{}'/'{}'",
+                          learned.category,
+                          learned.subcategory,
+                          resolved.category,
+                          resolved.subcategory);
+    }
+    return learned;
+}
+
 std::string CategorizationService::build_category_language_context() const
 {
     const CategoryLanguage lang = settings.get_category_language();
@@ -759,27 +1095,6 @@ std::string CategorizationService::build_category_language_context() const
         "The final labels will be translated to {} later.",
         name);
 }
-
-namespace {
-// Returns true when the value appears in the allowed list (case-insensitive).
-bool is_allowed(const std::string& value, const std::vector<std::string>& allowed) {
-    if (allowed.empty()) {
-        return true;
-    }
-    const std::string norm = to_lower_copy_str(value);
-    for (const auto& item : allowed) {
-        if (to_lower_copy_str(item) == norm) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Returns the first allowed entry or an empty string when the list is empty.
-std::string first_allowed_or_blank(const std::vector<std::string>& allowed) {
-    return allowed.empty() ? std::string() : allowed.front();
-}
-} // namespace
 
 std::optional<DatabaseManager::ResolvedCategory> CategorizationService::try_cached_categorization(
     const std::string& item_name,
@@ -891,6 +1206,7 @@ DatabaseManager::ResolvedCategory CategorizationService::categorize_via_llm(
                 resolved.subcategory = first_allowed_or_blank(allowed_subcategories);
             }
         }
+        resolved = prefer_learned_candidate_for_generic_result(resolved, prompt_name, prompt_path);
         const auto validation = validate_labels(resolved.category, resolved.subcategory);
         if (!validation.valid) {
             if (progress_callback) {
@@ -1084,6 +1400,7 @@ std::optional<CategorizedFile> CategorizationService::categorize_single_entry(
     result.suggested_name = suggested_name;
     result.canonical_category = resolved.category;
     result.canonical_subcategory = resolved.subcategory;
+    result.learning_context = extract_learning_context_text(prompt_path);
     return result;
 }
 
@@ -1093,7 +1410,17 @@ std::string CategorizationService::build_combined_context(const std::string& hin
                                                           FileType file_type) const
 {
     std::string combined_context;
-    const std::string whitelist_block = build_whitelist_context();
+    const auto allowed_categories = settings.get_allowed_categories();
+    const auto allowed_subcategories = settings.get_allowed_subcategories();
+    const bool large_whitelist =
+        settings.get_use_whitelist() &&
+        allowed_categories.size() + allowed_subcategories.size() > kLargeWhitelistPromptThreshold;
+    const std::string whitelist_block = settings.get_use_whitelist()
+        ? build_whitelist_context_for_prompt(prompt_name, prompt_path)
+        : std::string();
+    const std::string learned_candidate_block = large_whitelist
+        ? std::string()
+        : build_learned_candidate_context(prompt_name, prompt_path);
     const std::string language_block = build_category_language_context();
     const bool rich_image_context =
         file_type == FileType::File && has_image_description_context(prompt_path);
@@ -1136,6 +1463,12 @@ std::string CategorizationService::build_combined_context(const std::string& hin
             combined_context += "\n\n";
         }
         combined_context += whitelist_block;
+    }
+    if (!learned_candidate_block.empty()) {
+        if (!combined_context.empty()) {
+            combined_context += "\n\n";
+        }
+        combined_context += learned_candidate_block;
     }
     if (!hint_block.empty()) {
         if (!combined_context.empty()) {
