@@ -96,28 +96,6 @@ const std::vector<VisualModelDescriptor>& visual_model_descriptors()
                  {"mmproj-model-f16.gguf",
                   "llava-v1.6-mistral-7b-mmproj-f16.gguf"}},
             },
-            {},
-        },
-        {
-            "llava-v1.6-vicuna-7b",
-            "LLaVA 1.6 Vicuna 7B",
-            VisualModelArchitecture::MtmdProjector,
-            VisualPromptPolicy::LegacyLlava,
-            {
-                {VisualModelArtifactKind::Model,
-                 "LLaVA 1.6 Vicuna 7B (text model)",
-                 "LLAVA_VICUNA_MODEL_URL",
-                 "model.gguf",
-                 {}},
-                {VisualModelArtifactKind::Mmproj,
-                 "LLaVA Vicuna mmproj (vision encoder)",
-                 "LLAVA_VICUNA_MMPROJ_URL",
-                 "mmproj.gguf",
-                 {"mmproj-model-f16.gguf",
-                  "llava-v1.6-vicuna-7b-mmproj-model-f16.gguf",
-                  "llava-v1.6-vicuna-7b-mmproj-f16.gguf"}},
-            },
-            {1536, 256},
         },
         {
             "gemma-3-4b-it",
@@ -140,7 +118,6 @@ const std::vector<VisualModelDescriptor>& visual_model_descriptors()
                   "mmproj-gemma-3-4b-it-Q4_K_M.gguf",
                   "mmproj-gemma-3-4b-it-Q8_0.gguf"}},
             },
-            {},
         },
     };
     return descriptors;

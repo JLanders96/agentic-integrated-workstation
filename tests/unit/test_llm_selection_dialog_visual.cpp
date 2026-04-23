@@ -67,8 +67,6 @@ TEST_CASE("Visual model entry shows missing env var state") {
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", std::nullopt);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
 
@@ -98,8 +96,6 @@ TEST_CASE("Visual model entry shows resume state for partial downloads") {
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
 
@@ -137,8 +133,6 @@ TEST_CASE("Visual model entry reports download errors") {
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
 
@@ -174,8 +168,6 @@ TEST_CASE("Visual backend selection switches descriptor-driven download state") 
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", std::nullopt);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
 
@@ -234,8 +226,6 @@ TEST_CASE("Visual dialog does not mark another backend's legacy generic mmproj a
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", llava_model_url);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", llava_mmproj_url);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", gemma_model_url);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", gemma_mmproj_url);
 
@@ -274,8 +264,6 @@ TEST_CASE("Visual dialog accepts the legacy LLaVA generic mmproj without metadat
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
     EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", mmproj_url);
-    EnvVarGuard llava_vicuna_model_guard("LLAVA_VICUNA_MODEL_URL", std::nullopt);
-    EnvVarGuard llava_vicuna_mmproj_guard("LLAVA_VICUNA_MMPROJ_URL", std::nullopt);
     EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", std::nullopt);
     EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", std::nullopt);
 

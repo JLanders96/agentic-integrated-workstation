@@ -684,8 +684,6 @@ Visual LLM:
 
 - `LLAVA_MODEL_URL` - download URL for the LLaVA 1.6 Mistral 7B text model.
 - `LLAVA_MMPROJ_URL` - download URL for the LLaVA 1.6 Mistral 7B mmproj file.
-- `LLAVA_VICUNA_MODEL_URL` - download URL for the LLaVA 1.6 Vicuna 7B text model.
-- `LLAVA_VICUNA_MMPROJ_URL` - download URL for the LLaVA 1.6 Vicuna 7B mmproj file.
 - `GEMMA3_4B_MODEL_URL` - download URL for the default/recommended Gemma 3 4B IT text model.
 - `GEMMA3_4B_MMPROJ_URL` - download URL for the default/recommended Gemma 3 4B IT mmproj file.
 - `AI_FILE_SORTER_VISUAL_USE_GPU` - force visual encoder GPU usage (`1`) or CPU (`0`). Defaults to auto; Vulkan may fall back to CPU if VRAM is low.

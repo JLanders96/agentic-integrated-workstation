@@ -21,7 +21,7 @@ void write_download_metadata(const std::filesystem::path& artifact_path, const s
 
 TEST_CASE("Default visual model descriptor exposes the MTMD backend catalog") {
     const auto& descriptors = visual_model_descriptors();
-    REQUIRE(descriptors.size() >= 3);
+    REQUIRE(descriptors.size() >= 2);
 
     const auto& descriptor = default_visual_model_descriptor();
 
@@ -37,15 +37,14 @@ TEST_CASE("Default visual model descriptor exposes the MTMD backend catalog") {
     CHECK(std::string(descriptor.artifacts[1].url_env) == "GEMMA3_4B_MMPROJ_URL");
     CHECK(std::string(descriptor.artifacts[1].local_storage_name) == "mmproj.gguf");
 
-    const auto* vicuna = find_visual_model_descriptor("llava-v1.6-vicuna-7b");
-    REQUIRE(vicuna != nullptr);
-    CHECK(std::string(vicuna->display_name) == "LLaVA 1.6 Vicuna 7B");
-    CHECK(vicuna->prompt_policy == VisualPromptPolicy::LegacyLlava);
-    CHECK(vicuna->runtime_hints.image_max_tokens == 1536);
-    CHECK(vicuna->runtime_hints.max_batch_size == 256);
-    REQUIRE(vicuna->artifacts.size() == 2);
-    CHECK(std::string(vicuna->artifacts[0].url_env) == "LLAVA_VICUNA_MODEL_URL");
-    CHECK(std::string(vicuna->artifacts[1].url_env) == "LLAVA_VICUNA_MMPROJ_URL");
+    const auto* llava = find_visual_model_descriptor("llava-v1.6-mistral-7b");
+    REQUIRE(llava != nullptr);
+    CHECK(std::string(llava->display_name) == "LLaVA 1.6 Mistral 7B");
+    CHECK(llava->prompt_policy == VisualPromptPolicy::LegacyLlava);
+    REQUIRE(llava->artifacts.size() == 2);
+    CHECK(std::string(llava->artifacts[0].url_env) == "LLAVA_MODEL_URL");
+    CHECK(std::string(llava->artifacts[1].url_env) == "LLAVA_MMPROJ_URL");
+    CHECK(find_visual_model_descriptor("llava-v1.6-vicuna-7b") == nullptr);
 
     const auto* gemma = find_visual_model_descriptor("gemma-3-4b-it");
     REQUIRE(gemma != nullptr);
