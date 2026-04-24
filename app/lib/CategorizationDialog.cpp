@@ -1548,7 +1548,11 @@ void CategorizationDialog::on_confirm_and_sort_button_clicked()
                             dry_run);
     }
 
-    if (files_not_moved.empty()) {
+    if (dry_run) {
+        if (core_logger) {
+            core_logger->info("Dry run completed. No files were moved.");
+        }
+    } else if (files_not_moved.empty()) {
         if (core_logger) {
             core_logger->info("All files have been sorted and moved successfully.");
         }

@@ -2,6 +2,7 @@
 #include "CategorizationDialog.hpp"
 #include "CloudCompatibilityProvider.hpp"
 #include "DatabaseManager.hpp"
+#include "Logger.hpp"
 #include "LocalFsProvider.hpp"
 #include "StorageProviderRegistry.hpp"
 #include "TestHooks.hpp"
@@ -9,7 +10,9 @@
 #include "UndoManager.hpp"
 #include "UserLearningStore.hpp"
 #include <QCheckBox>
+#include <QDialog>
 #include <QTableView>
+#include <QTimer>
 #include <QStandardItemModel>
 #include <chrono>
 #include <filesystem>
@@ -24,6 +27,27 @@ struct MoveProbeGuard {
         TestHooks::reset_categorization_move_probe();
     }
 };
+
+void schedule_active_modal_accept()
+{
+    auto closer = std::make_shared<std::function<void(int)>>();
+    *closer = [closer](int attempts_remaining) {
+        auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        if (!dialog) {
+            if (attempts_remaining > 0) {
+                QTimer::singleShot(0, [closer, attempts_remaining]() {
+                    (*closer)(attempts_remaining - 1);
+                });
+            }
+            return;
+        }
+        dialog->accept();
+    };
+
+    QTimer::singleShot(0, [closer]() {
+        (*closer)(10);
+    });
+}
 
 CategorizedFile sample_file() {
     CategorizedFile file;
@@ -192,6 +216,70 @@ TEST_CASE("CategorizationDialog undo allows renaming again") {
     dialog.test_trigger_confirm();
     REQUIRE_FALSE(std::filesystem::exists(source));
     REQUIRE(std::filesystem::exists(destination));
+}
+
+TEST_CASE("CategorizationDialog dry run logs preview completion without moved success") {
+    EnvVarGuard platform_guard("QT_QPA_PLATFORM", "offscreen");
+    QtAppContext qt_context;
+
+    TempDir cache_home;
+    EnvVarGuard cache_home_guard("XDG_CACHE_HOME", cache_home.path().string());
+
+    auto logger = Logger::get_logger("core_logger");
+    if (!logger) {
+        Logger::setup_loggers();
+        logger = Logger::get_logger("core_logger");
+    }
+    REQUIRE(logger != nullptr);
+
+    std::string clear_error;
+    REQUIRE(Logger::clear_logs(&clear_error));
+
+    TempDir temp_dir;
+    const std::filesystem::path base = temp_dir.path();
+    const std::string file_name = "draft.txt";
+    const std::filesystem::path source = base / file_name;
+    const std::filesystem::path destination = base / "Docs" / "Reports" / file_name;
+    std::ofstream(source).put('x');
+
+    CategorizedFile file;
+    file.file_path = base.string();
+    file.file_name = file_name;
+    file.type = FileType::File;
+    file.category = "Docs";
+    file.subcategory = "Reports";
+
+    TempDir undo_dir_for_dialog;
+    CategorizationDialog dialog(nullptr, true, undo_dir_for_dialog.path().string());
+    dialog.test_set_entries({file});
+
+    auto* dry_run_checkbox = [&dialog]() -> QCheckBox* {
+        const auto checkboxes = dialog.findChildren<QCheckBox*>();
+        for (auto* checkbox : checkboxes) {
+            if (checkbox && checkbox->text().contains(QStringLiteral("Dry run"))) {
+                return checkbox;
+            }
+        }
+        return nullptr;
+    }();
+    REQUIRE(dry_run_checkbox != nullptr);
+    dry_run_checkbox->setChecked(true);
+
+    schedule_active_modal_accept();
+    dialog.test_trigger_confirm();
+    logger->flush();
+
+    REQUIRE(std::filesystem::exists(source));
+    REQUIRE_FALSE(std::filesystem::exists(destination));
+
+    const auto core_log_path = std::filesystem::path(Logger::get_log_directory()) / "core.log";
+    std::ifstream log_stream(core_log_path);
+    REQUIRE(log_stream.good());
+    const std::string log_text((std::istreambuf_iterator<char>(log_stream)),
+                               std::istreambuf_iterator<char>());
+
+    CHECK(log_text.find("Dry run completed. No files were moved.") != std::string::npos);
+    CHECK(log_text.find("All files have been sorted and moved successfully.") == std::string::npos);
 }
 
 TEST_CASE("UndoManager restores saved plans through the active storage provider") {

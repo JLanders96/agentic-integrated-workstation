@@ -925,6 +925,13 @@ Procedure: Confirm the rename, undo it, and confirm again.
 Expected outcome: Each confirm applies the rename, and undo restores the original filename for a second rename.
 Run: `./build-tests/ai_file_sorter_tests "CategorizationDialog undo allows renaming again"`
 
+#### Test case: CategorizationDialog dry run logs preview completion without moved success
+Purpose: Prevent dry-run sessions from reporting that files were actually moved.
+Setup: Enable the dialog's dry-run checkbox for a categorized file while routing logs into an isolated cache directory.
+Procedure: Confirm the dialog, auto-close the preview popup, and inspect `core.log`.
+Expected outcome: The source file stays in place, no destination file is created, and the log contains the dry-run completion message without the real-move success message.
+Run: `./build-tests/ai_file_sorter_tests "CategorizationDialog dry run logs preview completion without moved success"`
+
 #### Test case: UndoManager restores saved plans through the active storage provider
 Purpose: Verify persisted undo plans can be replayed through the storage provider abstraction.
 Setup: Create a saved move plan and attach a storage provider that records undo calls.
