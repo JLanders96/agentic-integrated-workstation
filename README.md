@@ -519,27 +519,27 @@ Option A - CMake + vcpkg (recommended)
    cmake --build external\libzip\build --config Release
    ```
 
-4. Determine your vcpkg root. It is the folder that contains `vcpkg.exe` (for example `C:\dev\vcpkg`).
+4. Determine your vcpkg root only if auto-discovery does not find it. The Windows helper scripts look in this order: `VCPKG_ROOT` / `VPKG_ROOT`, `vcpkg` / `vpkg` on `PATH`, then common writable locations such as `<repo-drive>:\dev\vcpkg`, `<repo-drive>:\vcpkg`, `%SystemDrive%\dev\vcpkg`, and `%SystemDrive%\vcpkg`.
     - If `vcpkg` is on your `PATH`, run this command to print the location:
 
       ```powershell
       Split-Path -Parent (Get-Command vcpkg).Source
       ```
 
-    - Otherwise use the directory where you cloned vcpkg.
+    - Otherwise use the directory where you cloned vcpkg, or pass it explicitly to the helper scripts.
 
    MediaInfo note: you do **not** manually add `MediaInfoLib` include/lib paths on Windows. The project already declares `libmediainfo` in `app/vcpkg.json`, and `app\build_windows.ps1` configures CMake with the vcpkg toolchain + manifest so `find_package(MediaInfoLib ...)` resolves it automatically. If you want to preinstall or verify it explicitly, run `vcpkg install libmediainfo:x64-windows`.
-5. Build the bundled `llama.cpp` runtime variants (run from the same **x64 Native Tools** / **VS 2022 Developer PowerShell** shell). Invoke the script once per backend you need. The script accepts `cuda=on|off`, `vulkan=on|off`, `blas=on|off`, `vcpkgroot=<path>`, and `openblasroot=<path>`. `blas` defaults to `AUTO`: it is enabled automatically for CPU-only builds and disabled automatically for CUDA/Vulkan builds unless you force it on. For CUDA builds, the helper prefers a valid `CUDA_PATH` and otherwise auto-selects the newest installed toolkit it can validate under `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA`. Make sure the MSYS2 OpenBLAS install from step 1 is present before running the CPU-only variant (or pass `openblasroot=<path>` explicitly):
+5. Build the bundled `llama.cpp` runtime variants (run from the same **x64 Native Tools** / **VS 2022 Developer PowerShell** shell). Invoke the script once per backend you need. The script accepts `cuda=on|off`, `vulkan=on|off`, `blas=on|off`, `vcpkgroot=<path>`, and `openblasroot=<path>`. `vcpkgroot=<path>` is optional and only needed when auto-discovery misses your install. `blas` defaults to `AUTO`: it is enabled automatically for CPU-only builds and disabled automatically for CUDA/Vulkan builds unless you force it on. For CUDA builds, the helper prefers a valid `CUDA_PATH` and otherwise auto-selects the newest installed toolkit it can validate under `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA`. Make sure the MSYS2 OpenBLAS install from step 1 is present before running the CPU-only variant (or pass `openblasroot=<path>` explicitly):
 
    ```powershell
    # CPU / OpenBLAS only
-   app\scripts\build_llama_windows.ps1 cuda=off vulkan=off vcpkgroot=C:\dev\vcpkg
+   app\scripts\build_llama_windows.ps1 cuda=off vulkan=off
    # CUDA (requires matching NVIDIA toolkit/driver)
-   app\scripts\build_llama_windows.ps1 cuda=on vulkan=off vcpkgroot=C:\dev\vcpkg
+   app\scripts\build_llama_windows.ps1 cuda=on vulkan=off
    # CUDA + OpenBLAS (optional override if you want that combination explicitly)
-   app\scripts\build_llama_windows.ps1 cuda=on vulkan=off blas=on vcpkgroot=C:\dev\vcpkg
+   app\scripts\build_llama_windows.ps1 cuda=on vulkan=off blas=on
    # Vulkan (requires LunarG Vulkan SDK or vendor Vulkan 1.2+ runtime)
-   app\scripts\build_llama_windows.ps1 cuda=off vulkan=on vcpkgroot=C:\dev\vcpkg
+   app\scripts\build_llama_windows.ps1 cuda=off vulkan=on
    ```
   
   Each run emits the appropriate `llama.dll` / `ggml*.dll` pair under `app\lib\precompiled\<cpu|cuda|vulkan>` and copies the runtime DLLs into `app\lib\ggml\w<variant>`. For Vulkan builds, install the latest LunarG Vulkan SDK (or the vendor's runtime), ensure `vulkaninfo` succeeds in the same shell, and then run the script. Supplying both Vulkan and (optionally) CUDA artifacts lets the non-MSIX Windows launcher `aifilesorter.exe` detect the best backend at launch—CUDA is preferred, Vulkan is used when CUDA is unavailable, and CPU remains the fallback, so CUDA is not required.
@@ -550,10 +550,10 @@ Option A - CMake + vcpkg (recommended)
    # One-time per shell if script execution is blocked:
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-   app\build_windows.ps1 -Configuration Release -VcpkgRoot C:\dev\vcpkg
+   app\build_windows.ps1 -Configuration Release
    ```
 
-   - Replace `C:\dev\vcpkg` with the path where you cloned vcpkg; it must contain `scripts\buildsystems\vcpkg.cmake`.
+   - Pass `-VcpkgRoot <path>` only if auto-discovery misses your vcpkg install. The path must contain `scripts\buildsystems\vcpkg.cmake`.
    - The helper produces these output directories by default:
      - Standard installer build with Windows auto-update enabled: `app\build-windows\Release`
      - Microsoft Store build with update checks disabled: `app\build-windows-store\Release`
@@ -593,14 +593,14 @@ Option B - CMake + Qt online installer
 3. Build the bundled `llama.cpp` runtime (same VS shell). Any missing OpenBLAS/cURL packages are installed automatically via vcpkg:
 
    ```powershell
-   pwsh .\app\scripts\build_llama_windows.ps1 [cuda=on|off] [vulkan=on|off] [blas=on|off] [vcpkgroot=C:\dev\vcpkg] [openblasroot=C:\msys64\mingw64]
+   pwsh .\app\scripts\build_llama_windows.ps1 [cuda=on|off] [vulkan=on|off] [blas=on|off] [vcpkgroot=<path>] [openblasroot=C:\msys64\mingw64]
    ```
 
    `blas` defaults to `AUTO`, which means ON for CPU-only builds and OFF for CUDA/Vulkan builds unless you force it. This is required before configuring the GUI because the build links against the produced `llama` static libraries/DLLs.
 4. Configure CMake from the repo root so CMake sees both the Qt install and the app's vcpkg manifest (adapt `CMAKE_PREFIX_PATH` to your Qt install):
 
     ```powershell
-    $env:VCPKG_ROOT = "C:\path\to\vcpkg"  # e.g. C:\dev\vcpkg
+    $env:VCPKG_ROOT = "D:\path\to\vcpkg"
     $qt = "C:\Qt\6.6.3\msvc2019_64"  # example
     cmake -S app -B build -G "Ninja" `
       -DCMAKE_PREFIX_PATH=$qt `
@@ -617,7 +617,7 @@ Notes
 
 - To rebuild from scratch, run `.\app\build_windows.ps1 -Clean`. The script removes the selected variant build directories and the shared `app\build-windows-vcpkg_installed` dependency tree before configuring.
 - Runtime DLLs are copied automatically via `windeployqt` after each successful build; skip this step with `-SkipDeploy` if you manage deployment yourself.
-- If Visual Studio sets `VCPKG_ROOT` to its bundled copy under `Program Files`, clone vcpkg to a writable directory (for example `C:\dev\vcpkg`) and pass `vcpkgroot=<path>` when running `build_llama_windows.ps1`.
+- If Visual Studio sets `VCPKG_ROOT` to its bundled copy under `Program Files`, point `VCPKG_ROOT` to a writable clone or pass `vcpkgroot=<path>` when running `build_llama_windows.ps1`. The script skips the bundled Visual Studio copy during auto-discovery because it is usually read-only.
 - If you plan to ship CUDA or Vulkan acceleration, run the `build_llama_*` helper for each backend you intend to include before configuring CMake so the libraries exist. The runtime can carry both and auto-select at launch, so CUDA remains optional.
 - `-BuildTests` and `-RunTests` currently build and execute tests only in the `Standard` variant, which is the primary Windows development/CI configuration.
 

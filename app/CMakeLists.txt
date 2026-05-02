@@ -233,7 +233,7 @@ function(aifs_assert_path_not_in_repo path_value label)
         # vcpkg manifest mode can stage package-managed headers/libs inside the
         # build tree under a local vcpkg_installed directory. That is still a
         # package-manager origin, not vendored MediaInfo content.
-        if(_entry_norm MATCHES "(^|/)vcpkg_installed(/|$)")
+        if(_entry_norm MATCHES "(^|/)(vcpkg_installed|[^/]+-vcpkg_installed)(/|$)")
             continue()
         endif()
         if(_entry_norm MATCHES "^${_repo_root_regex}(/|$)")
@@ -850,6 +850,43 @@ if(WIN32)
         endif()
     endif()
 
+    if(NOT _win_sdk_lib_paths)
+        set(_default_kits_root "C:/Program Files (x86)/Windows Kits/10")
+        if(EXISTS "${_default_kits_root}/Lib")
+            set(_sdk_versions "")
+            if(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION)
+                list(APPEND _sdk_versions "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+            endif()
+
+            file(GLOB _sdk_version_dirs LIST_DIRECTORIES true "${_default_kits_root}/Lib/*")
+            foreach(_sdk_version_dir IN LISTS _sdk_version_dirs)
+                if(IS_DIRECTORY "${_sdk_version_dir}")
+                    get_filename_component(_sdk_version_name "${_sdk_version_dir}" NAME)
+                    list(APPEND _sdk_versions "${_sdk_version_name}")
+                endif()
+            endforeach()
+
+            list(REMOVE_DUPLICATES _sdk_versions)
+            list(SORT _sdk_versions COMPARE NATURAL ORDER DESCENDING)
+
+            foreach(_sdk_version IN LISTS _sdk_versions)
+                set(_sdk_root "${_default_kits_root}/Lib/${_sdk_version}")
+                set(_sdk_has_arch_paths FALSE)
+                foreach(_subdir IN ITEMS um ucrt)
+                    set(_candidate "${_sdk_root}/${_subdir}/${_win_sdk_arch}")
+                    if(EXISTS "${_candidate}")
+                        list(APPEND _win_sdk_lib_paths "${_candidate}")
+                        set(_sdk_has_arch_paths TRUE)
+                    endif()
+                endforeach()
+                if(_sdk_has_arch_paths)
+                    message(STATUS "Using Windows SDK libraries from ${_sdk_root}")
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endif()
+
     foreach(libName IN LISTS WIN_SYSTEM_LIBS)
         string(TOUPPER "${libName}" upperLib)
         set(varName "${upperLib}_LIBRARY")
@@ -972,6 +1009,39 @@ if(WIN32)
         add_custom_command(TARGET aifilesorter POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:aifilesorter>/lib/ggml/wvulkan"
         )
+    endif()
+
+    set(_aifs_root_ggml_runtime_dlls
+        llama.dll
+        mtmd.dll
+        ggml.dll
+        ggml-base.dll
+        ggml-cpu.dll
+        ggml-blas.dll
+        ggml-cuda.dll
+        ggml-vulkan.dll
+        vulkan-1.dll)
+
+    if(_aifs_effective_windows_package_kind STREQUAL "MSIX")
+        foreach(_aifs_root_ggml_dll IN LISTS _aifs_root_ggml_runtime_dlls)
+            add_custom_command(TARGET aifilesorter POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:aifilesorter>/${_aifs_root_ggml_dll}"
+            )
+        endforeach()
+        if(_aifs_precompiled_vulkan_payload)
+            add_custom_command(TARGET aifilesorter POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_aifs_precompiled_vulkan_payload}
+                    "$<TARGET_FILE_DIR:aifilesorter>"
+                COMMAND_EXPAND_LISTS
+            )
+        endif()
+    else()
+        foreach(_aifs_root_ggml_dll IN LISTS _aifs_root_ggml_runtime_dlls)
+            add_custom_command(TARGET aifilesorter POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E rm -f "$<TARGET_FILE_DIR:aifilesorter>/${_aifs_root_ggml_dll}"
+            )
+        endforeach()
     endif()
 endif()
 

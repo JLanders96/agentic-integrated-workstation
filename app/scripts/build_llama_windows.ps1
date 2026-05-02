@@ -6,6 +6,7 @@ $useVulkan = "OFF"
 $useBlas = "AUTO" # AUTO = enable BLAS for CPU-only builds by default
 $vcpkgRootArg = $null
 $openBlasRootArg = $null
+$cudaArchArg = $null
 foreach ($arg in $args) {
     if ($arg -match "^cuda=(on|off)$") {
         $useCuda = $Matches[1].ToUpper()
@@ -17,6 +18,8 @@ foreach ($arg in $args) {
         $vcpkgRootArg = $Matches[1]
     } elseif ($arg -match "^openblasroot=(.+)$") {
         $openBlasRootArg = $Matches[1]
+    } elseif ($arg -match "^cudaarch=(.+)$") {
+        $cudaArchArg = $Matches[1]
     }
 }
 
@@ -27,6 +30,9 @@ if ($useCuda -eq "ON" -and $useVulkan -eq "ON") {
 Write-Output "`nCUDA Support: $useCuda`n"
 Write-Output "Vulkan Support: $useVulkan`n"
 Write-Output "BLAS Support: $useBlas (AUTO enables for CPU-only builds)`n"
+if ($cudaArchArg) {
+    Write-Output "CUDA Architectures Override: $cudaArchArg`n"
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $llamaDir = Join-Path $scriptDir "..\include\external\llama.cpp"
@@ -91,22 +97,153 @@ function Resolve-MSVCCompiler {
 $msvcCompiler = Resolve-MSVCCompiler
 
 # --- Locate OpenBLAS (required on Windows) ---
+function Resolve-VcpkgRootFromPath {
+    param([string]$Path)
+
+    if (-not $Path) {
+        return $null
+    }
+
+    try {
+        $candidate = (Resolve-Path $Path -ErrorAction Stop).Path
+    } catch {
+        return $null
+    }
+
+    if ((Get-Item $candidate).PSIsContainer) {
+        $dir = $candidate
+    } else {
+        $dir = (Get-Item $candidate).Directory.FullName
+    }
+
+    while ($dir -and (Test-Path $dir)) {
+        $toolchain = Join-Path $dir "scripts\buildsystems\vcpkg.cmake"
+        $exe = Join-Path $dir "vcpkg.exe"
+        if ((Test-Path $toolchain) -and (Test-Path $exe)) {
+            return $dir
+        }
+
+        $parent = Split-Path -Parent $dir
+        if (-not $parent -or $parent -eq $dir) {
+            break
+        }
+        $dir = $parent
+    }
+
+    return $null
+}
+
+function Test-VcpkgRootWritable {
+    param([string]$Root)
+
+    if (-not $Root -or -not (Test-Path $Root)) {
+        return $false
+    }
+
+    try {
+        $probePath = Join-Path $Root ".aifs-vcpkg-write-probe.tmp"
+        Set-Content -LiteralPath $probePath -Value "probe" -NoNewline
+        Remove-Item -LiteralPath $probePath -Force
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Test-IsVisualStudioBundledVcpkgRoot {
+    param([string]$Root)
+
+    if (-not $Root) {
+        return $false
+    }
+
+    return $Root -like "*Program Files*Microsoft Visual Studio*\VC\vcpkg"
+}
+
+function Get-DefaultVcpkgRootCandidates {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $repoDrive = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($scriptDir)).TrimEnd('\')
+    $systemDrive = if ($env:SystemDrive) { $env:SystemDrive.TrimEnd('\') } else { $null }
+
+    $preferredRoots = @()
+    if ($repoDrive) { $preferredRoots += $repoDrive }
+    if ($systemDrive -and $systemDrive -ne $repoDrive) { $preferredRoots += $systemDrive }
+
+    $otherRoots = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Root |
+        ForEach-Object { $_.TrimEnd('\') } |
+        Where-Object { $_ -match '^[A-Za-z]:$' } |
+        Where-Object { $_ -and ($_ -notin $preferredRoots) } |
+        Sort-Object
+
+    foreach ($root in @($preferredRoots + $otherRoots)) {
+        $candidates.Add((Join-Path $root "dev\vcpkg"))
+        $candidates.Add((Join-Path $root "vcpkg"))
+    }
+
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDir "..\.."))
+    $repoParent = Split-Path -Parent $repoRoot
+    if ($repoParent) {
+        $candidates.Add((Join-Path $repoParent "vcpkg"))
+    }
+
+    return $candidates | Select-Object -Unique
+}
+
 function Resolve-VcpkgRoot {
     param([string]$Explicit)
 
-    if ($Explicit) { return $Explicit }
-
-    $defaultRoot = "C:\dev\vcpkg"
-    if (Test-Path $defaultRoot) {
-        return $defaultRoot
+    if ($Explicit) {
+        $resolvedExplicit = Resolve-VcpkgRootFromPath -Path $Explicit
+        if (-not $resolvedExplicit) {
+            throw "The provided vcpkg root '$Explicit' does not contain vcpkg.exe and scripts\buildsystems\vcpkg.cmake."
+        }
+        if (-not (Test-VcpkgRootWritable -Root $resolvedExplicit)) {
+            throw "The provided vcpkg root '$resolvedExplicit' is not writable. Choose a writable clone outside protected locations such as Program Files."
+        }
+        return $resolvedExplicit
     }
 
-    if ($env:VCPKG_ROOT) {
-        if ($env:VCPKG_ROOT -like "*Program Files*Microsoft Visual Studio*") {
-            Write-Warning "Detected Visual Studio's bundled vcpkg at '$($env:VCPKG_ROOT)', which is typically read-only. Please clone vcpkg to a writable location (e.g. $defaultRoot) and pass vcpkgroot=<path>."
-            return $null
+    $rejectedCandidates = New-Object System.Collections.Generic.List[string]
+    $candidateSources = @()
+
+    foreach ($envCandidate in @($env:VCPKG_ROOT, $env:VPKG_ROOT)) {
+        if ($envCandidate) {
+            $candidateSources += $envCandidate
         }
-        return $env:VCPKG_ROOT
+    }
+
+    foreach ($commandName in @("vcpkg", "vpkg")) {
+        $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
+        if (-not $cmd) { continue }
+        foreach ($pathCandidate in @($cmd.Source, $cmd.Path, $cmd.Definition)) {
+            if ($pathCandidate) {
+                $candidateSources += $pathCandidate
+            }
+        }
+    }
+
+    $candidateSources += Get-DefaultVcpkgRootCandidates
+
+    foreach ($candidateSource in ($candidateSources | Select-Object -Unique)) {
+        $resolved = Resolve-VcpkgRootFromPath -Path $candidateSource
+        if (-not $resolved) {
+            continue
+        }
+        if (Test-IsVisualStudioBundledVcpkgRoot -Root $resolved) {
+            $rejectedCandidates.Add("Skipped Visual Studio bundled vcpkg at '$resolved' because it is usually read-only.") | Out-Null
+            continue
+        }
+        if (-not (Test-VcpkgRootWritable -Root $resolved)) {
+            $rejectedCandidates.Add("Skipped non-writable vcpkg root '$resolved'.") | Out-Null
+            continue
+        }
+        return $resolved
+    }
+
+    foreach ($message in $rejectedCandidates) {
+        Write-Warning $message
     }
 
     return $null
@@ -159,6 +296,31 @@ function Get-CudaToolkitVersion {
     }
 }
 
+function Get-NvidiaDriverCudaVersion {
+    $nvidiaSmi = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+    if (-not $nvidiaSmi -or -not (Test-Path $nvidiaSmi.Source)) {
+        $defaultNvidiaSmi = "C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+        if (Test-Path $defaultNvidiaSmi) {
+            $nvidiaSmi = [pscustomobject]@{ Source = $defaultNvidiaSmi }
+        }
+    }
+
+    if (-not $nvidiaSmi -or -not (Test-Path $nvidiaSmi.Source)) {
+        return $null
+    }
+
+    try {
+        $output = (& $nvidiaSmi.Source 2>$null) | Out-String
+        if ($output -match 'CUDA Version:\s*([0-9]+(?:\.[0-9]+)?)') {
+            return [version]$Matches[1]
+        }
+    } catch {
+        return $null
+    }
+
+    return $null
+}
+
 function Resolve-CudaRoot {
     $candidates = New-Object System.Collections.Generic.List[string]
 
@@ -183,7 +345,23 @@ function Resolve-CudaRoot {
             }
     }
 
+    $explicitCudaPath = $null
+    if ($env:CUDA_PATH) {
+        try {
+            if (Test-Path $env:CUDA_PATH) {
+                $explicitCudaPath = (Resolve-Path $env:CUDA_PATH).Path
+            } else {
+                $explicitCudaPath = $env:CUDA_PATH
+            }
+        } catch {
+            $explicitCudaPath = $env:CUDA_PATH
+        }
+    }
+
+    $driverCudaVersion = Get-NvidiaDriverCudaVersion
     $seen = @{}
+    $firstUsable = $null
+    $skippedNewerToolkits = New-Object System.Collections.Generic.List[string]
     foreach ($candidate in $candidates) {
         if (-not $candidate) {
             continue
@@ -204,9 +382,42 @@ function Resolve-CudaRoot {
         }
         $seen[$key] = $true
 
-        if (Test-CudaToolkitRoot -Root $resolved) {
+        if (-not (Test-CudaToolkitRoot -Root $resolved)) {
+            continue
+        }
+
+        $toolkitVersion = Get-CudaToolkitVersion $resolved
+        if (-not $firstUsable) {
+            $firstUsable = [pscustomobject]@{
+                Root = $resolved
+                Version = $toolkitVersion
+            }
+        }
+
+        if ($explicitCudaPath -and $resolved -ieq $explicitCudaPath) {
+            if ($driverCudaVersion -and $toolkitVersion -gt $driverCudaVersion) {
+                Write-Warning "CUDA_PATH points to toolkit v$toolkitVersion, but the installed NVIDIA driver reports CUDA $driverCudaVersion support. Builds may succeed but fail at runtime with PTX/toolchain errors."
+            }
             return $resolved
         }
+
+        if (-not $driverCudaVersion -or $toolkitVersion -le $driverCudaVersion) {
+            if ($driverCudaVersion -and $skippedNewerToolkits.Count -gt 0) {
+                $skippedList = ($skippedNewerToolkits -join ", ")
+                Write-Warning "Skipping newer CUDA toolkit(s) $skippedList because the installed NVIDIA driver reports CUDA $driverCudaVersion support. Using $resolved."
+            }
+            return $resolved
+        }
+
+        $skippedNewerToolkits.Add("v$toolkitVersion")
+    }
+
+    if ($firstUsable) {
+        if ($driverCudaVersion -and $skippedNewerToolkits.Count -gt 0) {
+            $skippedList = ($skippedNewerToolkits -join ", ")
+            Write-Warning "No installed CUDA toolkit is <= driver-reported CUDA $driverCudaVersion. Falling back to $($firstUsable.Root) after skipping $skippedList."
+        }
+        return $firstUsable.Root
     }
 
     throw "Could not resolve a usable CUDA toolkit. Expected include\cuda.h and lib\x64\cudart.lib under CUDA_PATH or a standard install such as C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\vX.Y."
@@ -214,9 +425,41 @@ function Resolve-CudaRoot {
 
 $vcpkgRoot = Resolve-VcpkgRoot -Explicit $vcpkgRootArg
 if (-not $vcpkgRoot -or -not (Test-Path $vcpkgRoot)) {
-    throw "Could not resolve a writable vcpkg root. Pass vcpkgroot=<path> (e.g. C:\dev\vcpkg) or set VCPKG_ROOT accordingly."
+    throw "Could not resolve a writable vcpkg root. Set VCPKG_ROOT, put vcpkg on PATH, or install a writable clone in a common location such as <drive>:\dev\vcpkg or <drive>:\vcpkg."
 }
 $env:VCPKG_ROOT = $vcpkgRoot
+Write-Output "Using vcpkg root: $vcpkgRoot"
+
+function Convert-ToCMakePath {
+    param([string]$Path)
+
+    if (-not $Path) {
+        return $null
+    }
+
+    return ([System.IO.Path]::GetFullPath($Path)).Replace('\', '/')
+}
+
+function New-CMakeCacheArg {
+    param(
+        [string]$Name,
+        [string]$Value,
+        [string]$Type = $null
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        throw "New-CMakeCacheArg requires a non-empty cache variable name."
+    }
+    if ($null -eq $Value) {
+        throw "New-CMakeCacheArg requires a value for '$Name'."
+    }
+
+    if ($Type) {
+        return "-D${Name}:${Type}=$Value"
+    }
+
+    return "-D${Name}=$Value"
+}
 
 $triplet = "x64-windows"
 
@@ -371,10 +614,10 @@ if (Test-Path "build") {
 New-Item -ItemType Directory -Path "build" | Out-Null
 
 $cmakeArgs = @(
-    "-DCMAKE_C_COMPILER=`"$msvcCompiler`"",
-    "-DCMAKE_CXX_COMPILER=`"$msvcCompiler`"",
-    "-DCURL_LIBRARY=`"$curlLib`"",
-    "-DCURL_INCLUDE_DIR=`"$curlInclude`"",
+    (New-CMakeCacheArg -Name "CMAKE_C_COMPILER" -Type "FILEPATH" -Value (Convert-ToCMakePath $msvcCompiler)),
+    (New-CMakeCacheArg -Name "CMAKE_CXX_COMPILER" -Type "FILEPATH" -Value (Convert-ToCMakePath $msvcCompiler)),
+    (New-CMakeCacheArg -Name "CURL_LIBRARY" -Type "FILEPATH" -Value (Convert-ToCMakePath $curlLib)),
+    (New-CMakeCacheArg -Name "CURL_INCLUDE_DIR" -Type "PATH" -Value (Convert-ToCMakePath $curlInclude)),
     "-DBUILD_SHARED_LIBS=ON",
     "-DGGML_OPENCL=OFF",
     "-DGGML_VULKAN=$useVulkan",
@@ -394,8 +637,8 @@ if ($enableBlas) {
         "-DGGML_BLAS=ON",
         "-DGGML_BLAS_VENDOR=OpenBLAS",
         "-DBLA_VENDOR=OpenBLAS",
-        "-DBLAS_INCLUDE_DIRS=`"$openBlasInclude`"",
-        "-DBLAS_LIBRARIES=`"$openBlasLib`""
+        (New-CMakeCacheArg -Name "BLAS_INCLUDE_DIRS" -Type "PATH" -Value (Convert-ToCMakePath $openBlasInclude)),
+        (New-CMakeCacheArg -Name "BLAS_LIBRARIES" -Type "FILEPATH" -Value (Convert-ToCMakePath $openBlasLib))
     )
 } else {
     $cmakeArgs += "-DGGML_BLAS=OFF"
@@ -406,6 +649,7 @@ if ($useCuda -eq "ON") {
     $includeDir = "$cudaRoot/include"
     $libDir = "$cudaRoot/lib/x64/cudart.lib"
     $cudaBinDir = "$cudaRoot/bin"
+    $nvccPath = Join-Path $cudaBinDir "nvcc.exe"
 
     Write-Host "Using CUDA toolkit from $cudaRoot"
     if (Test-Path $cudaBinDir) {
@@ -417,12 +661,15 @@ if ($useCuda -eq "ON") {
 
     $cmakeArgs += @(
         "-DGGML_CUDA=ON",
-        "-DCUDAToolkit_ROOT=`"$cudaRoot`"",
-        "-DCMAKE_CUDA_COMPILER=`"$cudaBinDir/nvcc.exe`"",
-        "-DCUDA_TOOLKIT_ROOT_DIR=`"$cudaRoot`"",
-        "-DCUDA_INCLUDE_DIRS=`"$includeDir`"",
-        "-DCUDA_CUDART=`"$libDir`""
+        (New-CMakeCacheArg -Name "CUDAToolkit_ROOT" -Type "PATH" -Value (Convert-ToCMakePath $cudaRoot)),
+        (New-CMakeCacheArg -Name "CMAKE_CUDA_COMPILER" -Type "FILEPATH" -Value (Convert-ToCMakePath $nvccPath)),
+        (New-CMakeCacheArg -Name "CUDA_TOOLKIT_ROOT_DIR" -Type "PATH" -Value (Convert-ToCMakePath $cudaRoot)),
+        (New-CMakeCacheArg -Name "CUDA_INCLUDE_DIRS" -Type "PATH" -Value (Convert-ToCMakePath $includeDir)),
+        (New-CMakeCacheArg -Name "CUDA_CUDART" -Type "FILEPATH" -Value (Convert-ToCMakePath $libDir))
     )
+    if ($cudaArchArg) {
+        $cmakeArgs += New-CMakeCacheArg -Name "CMAKE_CUDA_ARCHITECTURES" -Value $cudaArchArg
+    }
 } else {
     $cmakeArgs += "-DGGML_CUDA=OFF"
 }
@@ -432,12 +679,12 @@ if ($useVulkan -eq "ON") {
         throw "Vulkan paths were not initialized even though Vulkan support is enabled."
     }
     $cmakeArgs += @(
-        "-DVulkan_INCLUDE_DIR=`"$vulkanIncludeDir`"",
-        "-DVulkan_LIBRARY=`"$vulkanLibPath`"",
-        "-DVulkan_GLSLC_EXECUTABLE=`"$vulkanGlslcPath`""
+        (New-CMakeCacheArg -Name "Vulkan_INCLUDE_DIR" -Type "PATH" -Value (Convert-ToCMakePath $vulkanIncludeDir)),
+        (New-CMakeCacheArg -Name "Vulkan_LIBRARY" -Type "FILEPATH" -Value (Convert-ToCMakePath $vulkanLibPath)),
+        (New-CMakeCacheArg -Name "Vulkan_GLSLC_EXECUTABLE" -Type "FILEPATH" -Value (Convert-ToCMakePath $vulkanGlslcPath))
     )
     if ($vulkanSdkRoot) {
-        $cmakeArgs += "-DVULKAN_SDK=`"$vulkanSdkRoot`""
+        $cmakeArgs += New-CMakeCacheArg -Name "VULKAN_SDK" -Type "PATH" -Value (Convert-ToCMakePath $vulkanSdkRoot)
     }
 }
 

@@ -355,18 +355,27 @@ bool isVulkanRuntimeAvailable(const QString& exeDir) {
     return false;
 }
 
-void appendToProcessPath(const QString& directory) {
+void appendToProcessPath(const QString& directory, bool prepend = false) {
     if (directory.isEmpty()) {
         return;
     }
 
     QByteArray path = qgetenv("PATH");
-    if (!path.isEmpty()) {
-        path.append(';');
+    const QByteArray nativeDirectory = QDir::toNativeSeparators(directory).toUtf8();
+    if (prepend) {
+        if (!path.isEmpty()) {
+            path.prepend(';');
+        }
+        path.prepend(nativeDirectory);
+    } else {
+        if (!path.isEmpty()) {
+            path.append(';');
+        }
+        path.append(nativeDirectory);
     }
-    path.append(QDir::toNativeSeparators(directory).toUtf8());
     qputenv("PATH", path);
-    qInfo().noquote() << "Added to PATH:" << QDir::toNativeSeparators(directory);
+    qInfo().noquote() << (prepend ? "Prepended to PATH:" : "Added to PATH:")
+                       << QDir::toNativeSeparators(directory);
     qInfo().noquote() << "Current PATH:" << QString::fromUtf8(qgetenv("PATH"));
 }
 
@@ -849,7 +858,7 @@ void configure_runtime_paths(const QString& exeDir,
                              bool useVulkan,
                              const QString& cudaRuntimeDir = QString())
 {
-    appendToProcessPath(ggmlPath);
+    appendToProcessPath(ggmlPath, true);
     if (secureSearchEnabled) {
         addDllDirectoryChecked(ggmlPath);
     }

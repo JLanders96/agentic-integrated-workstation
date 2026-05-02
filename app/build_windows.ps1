@@ -83,6 +83,213 @@ function Resolve-VcpkgRootFromPath {
     return $null
 }
 
+function Get-DefaultVcpkgRootCandidates {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $repoDrive = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($appDir)).TrimEnd('\')
+    $systemDrive = if ($env:SystemDrive) { $env:SystemDrive.TrimEnd('\') } else { $null }
+
+    $preferredRoots = @()
+    if ($repoDrive) { $preferredRoots += $repoDrive }
+    if ($systemDrive -and $systemDrive -ne $repoDrive) { $preferredRoots += $systemDrive }
+
+    $otherRoots = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Root |
+        ForEach-Object { $_.TrimEnd('\') } |
+        Where-Object { $_ -match '^[A-Za-z]:$' } |
+        Where-Object { $_ -and ($_ -notin $preferredRoots) } |
+        Sort-Object
+
+    foreach ($root in @($preferredRoots + $otherRoots)) {
+        $candidates.Add((Join-Path $root "dev\vcpkg"))
+        $candidates.Add((Join-Path $root "vcpkg"))
+    }
+
+    $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $appDir ".."))
+    $repoParent = Split-Path -Parent $repoRoot
+    if ($repoParent) {
+        $candidates.Add((Join-Path $repoParent "vcpkg"))
+    }
+
+    return $candidates | Select-Object -Unique
+}
+
+function Format-ByteCount {
+    param([Nullable[Int64]]$Bytes)
+
+    if ($null -eq $Bytes) {
+        return "unknown"
+    }
+
+    return "{0:N2} GiB" -f ($Bytes / 1GB)
+}
+
+function Get-PathDriveFreeBytes {
+    param([string]$Path)
+
+    if (-not $Path) {
+        return $null
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    if (-not $root) {
+        return $null
+    }
+
+    $driveName = $root.TrimEnd('\').TrimEnd(':')
+    if (-not $driveName) {
+        return $null
+    }
+
+    $drive = Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue
+    if (-not $drive) {
+        return $null
+    }
+
+    return [Int64]$drive.Free
+}
+
+function Assert-SufficientConfigureDiskSpace {
+    param(
+        [string]$Path,
+        [string]$Label
+    )
+
+    $freeBytes = Get-PathDriveFreeBytes -Path $Path
+    if ($null -eq $freeBytes) {
+        return
+    }
+
+    $minimumBytes = 512MB
+    if ($freeBytes -lt $minimumBytes) {
+        throw "Insufficient free disk space for $Label at '$Path' ($([System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($Path))) has $(Format-ByteCount $freeBytes) free; need at least $(Format-ByteCount $minimumBytes) to start configure, and vcpkg builds may require significantly more)."
+    }
+}
+
+function Write-ConfigureFailureDiagnostics {
+    param(
+        [pscustomobject]$Variant,
+        [string]$SharedInstalledDir
+    )
+
+    $buildFreeBytes = Get-PathDriveFreeBytes -Path $Variant.BuildDir
+    if ($null -ne $buildFreeBytes) {
+        Write-Warning "Free space on build drive for '$($Variant.BuildDir)': $(Format-ByteCount $buildFreeBytes)"
+    }
+
+    $sharedFreeBytes = Get-PathDriveFreeBytes -Path $SharedInstalledDir
+    $buildRoot = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($Variant.BuildDir))
+    $sharedRoot = [System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($SharedInstalledDir))
+    if ($null -ne $sharedFreeBytes -and $sharedRoot -ne $buildRoot) {
+        Write-Warning "Free space on shared vcpkg drive for '$SharedInstalledDir': $(Format-ByteCount $sharedFreeBytes)"
+    }
+
+    $logPath = Join-Path $Variant.BuildDir "vcpkg-manifest-install.log"
+    if (Test-Path $logPath) {
+        $spaceErrors = Select-String -Path $logPath -Pattern "no space on device|not enough space|disk full" -ErrorAction SilentlyContinue
+        if ($spaceErrors) {
+            Write-Warning "Detected disk-space-related errors in '$logPath':"
+            foreach ($match in $spaceErrors) {
+                Write-Warning $match.Line.Trim()
+            }
+        }
+
+        Write-Warning "Tail of '$logPath':"
+        Get-Content $logPath -Tail 20 | ForEach-Object {
+            Write-Output "  $_"
+        }
+    }
+
+    $vcTargetsFiles = Get-ChildItem -Path (Join-Path $Variant.BuildDir "CMakeFiles") `
+        -Recurse -Filter "VCTargetsPath.vcxproj" -File -ErrorAction SilentlyContinue
+    foreach ($file in $vcTargetsFiles) {
+        if ($file.Length -eq 0) {
+            Write-Warning "Detected empty '$($file.FullName)' after configure failure. Free disk space, then rerun with -Clean to regenerate the build directory."
+        }
+    }
+}
+
+function Test-NormalizedPathEqual {
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+
+    if (-not $Left -or -not $Right) {
+        return $false
+    }
+
+    $normalizedLeft = [System.IO.Path]::GetFullPath($Left).TrimEnd('\')
+    $normalizedRight = [System.IO.Path]::GetFullPath($Right).TrimEnd('\')
+    return $normalizedLeft.Equals($normalizedRight, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-CMakeCacheValue {
+    param(
+        [string]$CachePath,
+        [string]$Key
+    )
+
+    if (-not (Test-Path $CachePath)) {
+        return $null
+    }
+
+    $entry = Select-String -Path $CachePath -Pattern "^$([Regex]::Escape($Key))(?::[^=]+)?=(.*)$" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $entry) {
+        return $null
+    }
+
+    return $entry.Matches[0].Groups[1].Value
+}
+
+function Reset-StaleVariantBuildDirectory {
+    param(
+        [pscustomobject]$Variant,
+        [string]$ExpectedSourceDir,
+        [string]$ExpectedSharedInstalledDir
+    )
+
+    $cachePath = Join-Path $Variant.BuildDir "CMakeCache.txt"
+    if (-not (Test-Path $cachePath)) {
+        return
+    }
+
+    $staleReasons = New-Object System.Collections.Generic.List[string]
+
+    $cachedSourceDir = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_HOME_DIRECTORY"
+    if ($cachedSourceDir -and -not (Test-NormalizedPathEqual -Left $cachedSourceDir -Right $ExpectedSourceDir)) {
+        $staleReasons.Add("cached source directory '$cachedSourceDir' does not match '$ExpectedSourceDir'") | Out-Null
+    }
+
+    $cachedBuildDir = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CACHEFILE_DIR"
+    if ($cachedBuildDir -and -not (Test-NormalizedPathEqual -Left $cachedBuildDir -Right $Variant.BuildDir)) {
+        $staleReasons.Add("cached build directory '$cachedBuildDir' does not match '$($Variant.BuildDir)'") | Out-Null
+    }
+
+    $cachedManifestDir = Get-CMakeCacheValue -CachePath $cachePath -Key "VCPKG_MANIFEST_DIR"
+    if ($cachedManifestDir -and -not (Test-NormalizedPathEqual -Left $cachedManifestDir -Right $ExpectedSourceDir)) {
+        $staleReasons.Add("cached vcpkg manifest directory '$cachedManifestDir' does not match '$ExpectedSourceDir'") | Out-Null
+    }
+
+    $cachedInstalledDir = Get-CMakeCacheValue -CachePath $cachePath -Key "VCPKG_INSTALLED_DIR"
+    if ($cachedInstalledDir -and -not (Test-NormalizedPathEqual -Left $cachedInstalledDir -Right $ExpectedSharedInstalledDir)) {
+        $staleReasons.Add("cached vcpkg installed directory '$cachedInstalledDir' does not match '$ExpectedSharedInstalledDir'") | Out-Null
+    }
+
+    if ($staleReasons.Count -eq 0) {
+        return
+    }
+
+    Write-Warning "Detected stale build cache in '$($Variant.BuildDir)'; removing the directory before configure."
+    foreach ($reason in $staleReasons) {
+        Write-Warning " - $reason"
+    }
+
+    Remove-Item -Recurse -Force $Variant.BuildDir
+}
+
 function Copy-VcpkgRuntimeDlls {
     param(
         [string[]]$SourceDirectories,
@@ -176,7 +383,8 @@ function Resolve-OutputExecutable {
 function Stage-BuildOutput {
     param(
         [string]$OutputExe,
-        [string]$BuildDir
+        [string]$BuildDir,
+        [string]$PackageKind
     )
 
     $outputDir = Split-Path -Parent $OutputExe
@@ -196,6 +404,46 @@ function Stage-BuildOutput {
     $destWocuda = Join-Path $outputDir "lib/ggml/wocuda"
     $destWcuda = Join-Path $outputDir "lib/ggml/wcuda"
     $destWvulkan = Join-Path $outputDir "lib/ggml/wvulkan"
+
+    function Remove-RootGgmlRuntimeDlls {
+        param([string]$Directory)
+
+        $rootRuntimeDlls = @(
+            "llama.dll",
+            "mtmd.dll",
+            "ggml.dll",
+            "ggml-base.dll",
+            "ggml-cpu.dll",
+            "ggml-blas.dll",
+            "ggml-cuda.dll",
+            "ggml-vulkan.dll",
+            "vulkan-1.dll"
+        )
+
+        foreach ($dllName in $rootRuntimeDlls) {
+            $rootCopy = Join-Path $Directory $dllName
+            if (Test-Path $rootCopy) {
+                Remove-Item -LiteralPath $rootCopy -Force
+            }
+        }
+    }
+
+    function Copy-RootVulkanRuntimeDlls {
+        param(
+            [string]$SourceDirectory,
+            [string]$Destination
+        )
+
+        if (-not (Test-Path $SourceDirectory)) {
+            Write-Warning "Vulkan runtime DLL directory not found: $SourceDirectory"
+            return
+        }
+
+        Get-ChildItem -Path $SourceDirectory -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                Copy-Item $_.FullName -Destination $Destination -Force
+            }
+    }
 
     foreach ($destDir in @($destWocuda, $destWcuda, $destWvulkan)) {
         if (-not (Test-Path $destDir)) {
@@ -305,6 +553,13 @@ function Stage-BuildOutput {
     } else {
         Write-Warning "No vcpkg runtime DLLs were copied; ensure curl/openssl/sqlite runtimes are present beside the executable before distributing."
     }
+
+    if ($PackageKind -eq "MSIX") {
+        Remove-RootGgmlRuntimeDlls -Directory $outputDir
+        Copy-RootVulkanRuntimeDlls -SourceDirectory $precompiledVulkanBin -Destination $outputDir
+    } else {
+        Remove-RootGgmlRuntimeDlls -Directory $outputDir
+    }
 }
 
 if (-not (Test-Path (Join-Path $llamaDir "CMakeLists.txt"))) {
@@ -355,7 +610,17 @@ if (-not $VcpkgRoot) {
 }
 
 if (-not $VcpkgRoot) {
-    throw "Could not locate vcpkg. Provide -VcpkgRoot or set the VCPKG_ROOT environment variable. If vcpkg is installed via winget, pass -VcpkgRoot explicitly (e.g. C:\dev\vcpkg)."
+    foreach ($candidate in Get-DefaultVcpkgRootCandidates) {
+        $resolved = Resolve-VcpkgRootFromPath -Path $candidate
+        if ($resolved) {
+            $VcpkgRoot = $resolved
+            break
+        }
+    }
+}
+
+if (-not $VcpkgRoot) {
+    throw "Could not locate vcpkg. Provide -VcpkgRoot, set the VCPKG_ROOT environment variable, or make vcpkg available on PATH."
 }
 
 $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
@@ -424,9 +689,16 @@ Write-Output "Shared vcpkg installed directory: $sharedVcpkgInstalledDir"
 $builtOutputs = New-Object System.Collections.Generic.List[object]
 
 foreach ($variant in $selectedVariants) {
+    Reset-StaleVariantBuildDirectory -Variant $variant `
+                                     -ExpectedSourceDir $appDir `
+                                     -ExpectedSharedInstalledDir $sharedVcpkgInstalledDir
+
     if (-not (Test-Path $variant.BuildDir)) {
         New-Item -ItemType Directory -Path $variant.BuildDir | Out-Null
     }
+
+    Assert-SufficientConfigureDiskSpace -Path $variant.BuildDir -Label "$($variant.Name) build directory"
+    Assert-SufficientConfigureDiskSpace -Path $sharedVcpkgInstalledDir -Label "shared vcpkg install directory"
 
     $enableTests = $BuildTests -and $variant.Name -eq "Standard"
     $configureArgs = Get-ConfigureArguments -Variant $variant `
@@ -446,6 +718,7 @@ foreach ($variant in $selectedVariants) {
 
     & $cmakeExe @configureArgs
     if ($LASTEXITCODE -ne 0) {
+        Write-ConfigureFailureDiagnostics -Variant $variant -SharedInstalledDir $sharedVcpkgInstalledDir
         throw "cmake configure failed for the $($variant.Name) variant."
     }
 
@@ -485,7 +758,7 @@ foreach ($variant in $selectedVariants) {
 
     $outputExe = Resolve-OutputExecutable -BuildDir $variant.BuildDir -ConfigurationName $Configuration
     Write-Output "Executable located at: $outputExe"
-    Stage-BuildOutput -OutputExe $outputExe -BuildDir $variant.BuildDir
+    Stage-BuildOutput -OutputExe $outputExe -BuildDir $variant.BuildDir -PackageKind $variant.PackageKind
 
     $builtOutputs.Add([pscustomobject]@{
         Variant = $variant.Name
