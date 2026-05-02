@@ -311,7 +311,10 @@ void Updater::show_required_update_dialog(const UpdateInfo& info, QWidget* paren
         QMessageBox box(parent);
         box.setIcon(QMessageBox::Warning);
         box.setWindowTitle(QObject::tr("Required Update Available"));
-        box.setText(QObject::tr("A required update is available. Please update to continue.\nIf you choose to quit, the application will close."));
+        box.setText(QObject::tr(
+            "A new update is available. It is required because of major improvements.\n"
+            "Please update to continue. If you choose to quit, the application will close."
+        ));
         apply_update_changelog(box, info);
         QPushButton* update_now = box.addButton(QObject::tr("Update Now"), QMessageBox::AcceptRole);
         QPushButton* quit_button = box.addButton(QObject::tr("Quit"), QMessageBox::RejectRole);
