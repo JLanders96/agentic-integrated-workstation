@@ -2076,7 +2076,7 @@ bool MainApp::prompt_visual_cpu_fallback(const std::string& reason)
         QMessageBox box(this);
         box.setIcon(QMessageBox::Question);
         box.setWindowTitle(tr("Switch image analysis to CPU?"));
-        box.setText(tr("Image analysis ran out of GPU memory."));
+        box.setText(tr("Image analysis failed to start with the GPU backend."));
         box.setInformativeText(tr("Retry on CPU instead? Cancel will stop this analysis."));
         box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
         box.setDefaultButton(QMessageBox::Ok);

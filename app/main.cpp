@@ -2,6 +2,8 @@
 #include "AppTestRunner.hpp"
 #include "EmbeddedEnv.hpp"
 #include "GgmlRuntimePaths.hpp"
+#include "ImageAnalyzerFactory.hpp"
+#include "ImageAnalyzer.hpp"
 #include "Logger.hpp"
 #include "MainApp.hpp"
 #include "SingleInstanceCoordinator.hpp"
@@ -10,6 +12,7 @@
 #include "UpdaterLiveTestConfig.hpp"
 #include "Utils.hpp"
 #include "LLMSelectionDialog.hpp"
+#include "VisualLlmRuntime.hpp"
 #include <app_version.hpp>
 
 #include <QApplication>
@@ -71,6 +74,7 @@ struct ParsedArguments {
     bool console_log{false};
     bool force_direct_run{false};
     std::optional<std::string> self_test_suite;
+    std::optional<std::string> visual_gpu_probe_backend;
     UpdaterLiveTestConfig updater_live_test;
     std::vector<char*> qt_args;
 };
@@ -170,6 +174,14 @@ ParsedArguments parse_command_line(int argc, char** argv)
             if (parsed.self_test_suite->empty()) {
                 parsed.self_test_suite = "all";
             }
+            continue;
+        }
+        if (is_flag && std::strcmp(argv[i], "--visual-gpu-probe") == 0) {
+            parsed.visual_gpu_probe_backend = std::string();
+            continue;
+        }
+        if (is_flag &&
+            consume_prefixed_value(argv[i], "--visual-gpu-probe=", parsed.visual_gpu_probe_backend)) {
             continue;
         }
         if (is_flag && std::strcmp(argv[i], UpdaterLaunchOptions::kLiveTestFlag) == 0) {
@@ -532,6 +544,37 @@ int run_self_test_mode(const ParsedArguments& parsed_args)
     return result.passed() ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+int run_visual_gpu_probe_mode(const ParsedArguments& parsed_args)
+{
+    int qt_argc = static_cast<int>(parsed_args.qt_args.size()) - 1;
+    char** qt_argv = const_cast<char**>(parsed_args.qt_args.data());
+    QCoreApplication app(qt_argc, qt_argv);
+
+    set_process_env("AI_FILE_SORTER_VISUAL_SKIP_GPU_PREFLIGHT", "1");
+    set_process_env("AI_FILE_SORTER_VISUAL_USE_GPU", "1");
+
+    std::string error;
+    const auto backend = VisualLlmRuntime::resolve_active_backend(
+        parsed_args.visual_gpu_probe_backend.value_or(""),
+        &error);
+    if (!backend) {
+        std::cerr << (error.empty() ? "Visual GPU probe could not resolve a backend." : error)
+                  << "\n";
+        return EXIT_FAILURE;
+    }
+
+    try {
+        ImageAnalyzerSettings analyzer_settings;
+        analyzer_settings.use_gpu = true;
+        auto analyzer = ImageAnalyzerFactory::create(*backend, analyzer_settings);
+        (void)analyzer;
+        return EXIT_SUCCESS;
+    } catch (const std::exception& ex) {
+        std::cerr << ex.what() << "\n";
+        return EXIT_FAILURE;
+    }
+}
+
 int run_application(const ParsedArguments& parsed_args)
 {
     EmbeddedEnv env_loader(":/net/quicknode/AIFileSorter/.env");
@@ -549,6 +592,9 @@ int run_application(const ParsedArguments& parsed_args)
 
     if (parsed_args.self_test_suite) {
         return run_self_test_mode(parsed_args);
+    }
+    if (parsed_args.visual_gpu_probe_backend.has_value()) {
+        return run_visual_gpu_probe_mode(parsed_args);
     }
 
     auto updater_live_test = parsed_args.updater_live_test;

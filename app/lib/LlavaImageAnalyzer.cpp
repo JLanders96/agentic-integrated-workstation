@@ -24,6 +24,16 @@
 #include <unordered_set>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #ifdef AI_FILE_SORTER_HAS_MTMD
 #include "ggml-backend.h"
 #include "llama.h"
@@ -38,10 +48,12 @@ typedef void (*mtmd_progress_callback_t)(const char* name,
                                          int32_t current_batch,
                                          int32_t total_batches,
                                          void* user_data);
+#if !defined(_WIN32)
 MTMD_API void mtmd_helper_set_progress_callback(mtmd_progress_callback_t callback,
                                                 void* user_data);
 #endif
-#if defined(AI_FILE_SORTER_MTMD_LOG_CALLBACK)
+#endif
+#if defined(AI_FILE_SORTER_MTMD_LOG_CALLBACK) && !defined(_WIN32)
 MTMD_API void mtmd_helper_log_set(ggml_log_callback log_callback, void* user_data);
 #endif
 }
@@ -50,6 +62,50 @@ MTMD_API void mtmd_helper_log_set(ggml_log_callback log_callback, void* user_dat
 namespace {
 constexpr size_t kMaxFilenameWords = 3;
 constexpr size_t kMaxFilenameLength = 50;
+
+#if defined(AI_FILE_SORTER_HAS_MTMD) && defined(_WIN32)
+FARPROC resolve_mtmd_helper(const char* name) {
+    HMODULE module = GetModuleHandleW(L"mtmd.dll");
+    if (!module) {
+        return nullptr;
+    }
+    return GetProcAddress(module, name);
+}
+#endif
+
+#if defined(AI_FILE_SORTER_MTMD_LOG_CALLBACK)
+bool set_mtmd_log_callback(ggml_log_callback callback, void* user_data) {
+#if defined(_WIN32)
+    using LogSetFn = void (*)(ggml_log_callback, void*);
+    auto* fn = reinterpret_cast<LogSetFn>(resolve_mtmd_helper("mtmd_helper_log_set"));
+    if (!fn) {
+        return false;
+    }
+    fn(callback, user_data);
+    return true;
+#else
+    mtmd_helper_log_set(callback, user_data);
+    return true;
+#endif
+}
+#endif
+
+#if defined(AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
+bool set_mtmd_progress_callback(mtmd_progress_callback_t callback, void* user_data) {
+#if defined(_WIN32)
+    using ProgressSetFn = void (*)(mtmd_progress_callback_t, void*);
+    auto* fn = reinterpret_cast<ProgressSetFn>(resolve_mtmd_helper("mtmd_helper_set_progress_callback"));
+    if (!fn) {
+        return false;
+    }
+    fn(callback, user_data);
+    return true;
+#else
+    mtmd_helper_set_progress_callback(callback, user_data);
+    return true;
+#endif
+}
+#endif
 
 struct PromptRequest {
     std::string system_prompt;
@@ -1008,14 +1064,14 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
 #if defined(AI_FILE_SORTER_MTMD_LOG_CALLBACK)
     struct LogGuard {
         bool active{false};
-        explicit LogGuard(LlavaImageAnalyzer* self) : active(true) {
-            mtmd_helper_log_set(&LlavaImageAnalyzer::mtmd_log_callback, self);
+        explicit LogGuard(LlavaImageAnalyzer* self)
+            : active(set_mtmd_log_callback(&LlavaImageAnalyzer::mtmd_log_callback, self)) {
         }
         ~LogGuard() {
             if (!active) {
                 return;
             }
-            mtmd_helper_log_set(nullptr, nullptr);
+            set_mtmd_log_callback(nullptr, nullptr);
         }
     };
 
@@ -1040,17 +1096,15 @@ std::string LlavaImageAnalyzer::infer_text(mtmd_bitmap* bitmap,
 #if defined(AI_FILE_SORTER_MTMD_PROGRESS_CALLBACK)
     struct ProgressGuard {
         bool active{false};
-        ProgressGuard(bool enabled, LlavaImageAnalyzer* self) : active(enabled) {
-            if (!active) {
-                return;
-            }
-            mtmd_helper_set_progress_callback(&LlavaImageAnalyzer::mtmd_progress_callback, self);
+        ProgressGuard(bool enabled, LlavaImageAnalyzer* self)
+            : active(enabled &&
+                     set_mtmd_progress_callback(&LlavaImageAnalyzer::mtmd_progress_callback, self)) {
         }
         ~ProgressGuard() {
             if (!active) {
                 return;
             }
-            mtmd_helper_set_progress_callback(nullptr, nullptr);
+            set_mtmd_progress_callback(nullptr, nullptr);
         }
     };
 

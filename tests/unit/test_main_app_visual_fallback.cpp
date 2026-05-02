@@ -12,7 +12,13 @@ TEST_CASE("Visual CPU fallback detection recognizes retryable GPU failures") {
         "Failed to create llama_context (try AI_FILE_SORTER_VISUAL_USE_GPU=0 to force CPU)"));
     CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback("mtmd_helper_eval_chunks failed"));
     CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback("VK_ERROR_OUT_OF_DEVICE_MEMORY"));
+    CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback(
+        "vk::Device::allocateMemory: ErrorOutOfDeviceMemory"));
+    CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback(
+        "vk::Device::allocateMemory: ErrorOutOfHostMemory"));
     CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback("CUDA error out of memory"));
+    CHECK(MainAppTestAccess::should_offer_visual_cpu_fallback(
+        "Visual GPU preflight crashed (exit code 0xC0000409)"));
 }
 
 TEST_CASE("Visual CPU fallback detection ignores non-retryable startup failures") {
