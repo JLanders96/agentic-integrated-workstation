@@ -103,7 +103,7 @@ void UiTranslator::translate_primary_controls(bool analysis_in_progress) const
         checkbox->setToolTip(tr("Scan files inside subfolders and treat them as part of the main folder."));
     }
     if (auto* checkbox = raw_ptr(deps_.primary.analyze_images_checkbox)) {
-        checkbox->setText(tr("Analyze picture files by content (can be slow)"));
+        checkbox->setText(tr("Analyze picture files by content"));
         checkbox->setToolTip(tr("Run the visual LLM on supported picture files."));
     }
     if (auto* checkbox = raw_ptr(deps_.primary.process_images_only_checkbox)) {

@@ -296,7 +296,7 @@ void verify_primary_controls(const UiTranslatorTestHarness& h)
     REQUIRE(h.files_checkbox->text() == QStringLiteral("Categorize files"));
     REQUIRE(h.directories_checkbox->text() == QStringLiteral("Categorize folders"));
     REQUIRE(h.include_subdirectories_checkbox->text() == QStringLiteral("Scan subfolders"));
-    REQUIRE(h.analyze_images_checkbox->text() == QStringLiteral("Analyze picture files by content (can be slow)"));
+    REQUIRE(h.analyze_images_checkbox->text() == QStringLiteral("Analyze picture files by content"));
     REQUIRE(h.process_images_only_checkbox->text() ==
             QStringLiteral("Process picture files only (ignore any other files)"));
     REQUIRE(h.add_image_date_to_category_checkbox->text() ==

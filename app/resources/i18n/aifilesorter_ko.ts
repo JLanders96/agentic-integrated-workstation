@@ -2165,8 +2165,8 @@ Tried:
     </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="106"/>
-        <source>Analyze picture files by content (can be slow)</source>
-        <translation>이미지 파일을 내용으로 분석(느릴 수 있음)</translation>
+        <source>Analyze picture files by content</source>
+        <translation>이미지 파일을 내용으로 분석</translation>
     </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="107"/>

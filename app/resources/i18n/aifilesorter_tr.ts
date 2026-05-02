@@ -2165,8 +2165,8 @@ Denenenler:
     </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="106"/>
-        <source>Analyze picture files by content (can be slow)</source>
-        <translation>Resim dosyalarını içeriğe göre analiz et (yavaş olabilir)</translation>
+        <source>Analyze picture files by content</source>
+        <translation>Resim dosyalarını içeriğe göre analiz et</translation>
     </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="107"/>
