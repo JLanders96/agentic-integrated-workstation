@@ -1084,9 +1084,9 @@ if(AI_FILE_SORTER_BUILD_TESTS)
                 endif()
             endif()
 
-            if(EXISTS "${PRECOMPILED_CPU_ROOT}/bin")
+            if(EXISTS "${PRECOMPILED_CPU_BIN_DIR}")
                 file(GLOB _aifs_precompiled_cpu_runtime_dlls
-                    "${PRECOMPILED_CPU_ROOT}/bin/*.dll")
+                    "${PRECOMPILED_CPU_BIN_DIR}/*.dll")
                 list(APPEND _aifs_test_runtime_dlls ${_aifs_precompiled_cpu_runtime_dlls})
             endif()
 
