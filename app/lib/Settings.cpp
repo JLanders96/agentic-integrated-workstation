@@ -297,7 +297,7 @@ void Settings::load_basic_settings(const std::function<bool(const char*, bool)>&
     llm_downloads_expanded = load_bool("LLMDownloadsExpanded", true);
     visual_model_id = normalize_visual_model_id(
         config.getValue("Settings", "VisualModelId", default_visual_model_descriptor().id));
-    use_subcategories = load_bool("UseSubcategories", false);
+    use_subcategories = load_bool("UseSubcategories", true);
     use_consistency_hints = load_bool("UseConsistencyHints", false);
     categorize_files = load_bool("CategorizeFiles", true);
     categorize_directories = load_bool("CategorizeDirectories", false);

@@ -4,6 +4,8 @@
 #include "TestHelpers.hpp"
 #include "Utils.hpp"
 
+#include <QSettings>
+
 #include <filesystem>
 #include <fstream>
 
@@ -60,6 +62,29 @@ TEST_CASE("Settings defaults image analysis off when visual LLM files are missin
     REQUIRE_FALSE(loaded);
     REQUIRE_FALSE(settings.get_analyze_images_by_content());
     REQUIRE_FALSE(settings.get_offer_rename_images());
+}
+
+TEST_CASE("Settings defaults use subcategories on when config key is missing") {
+    TempDir temp;
+    EnvVarGuard home_guard("HOME", temp.path().string());
+#ifdef _WIN32
+    EnvVarGuard appdata_guard("APPDATA", temp.path().string());
+#endif
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
+
+    Settings settings;
+    const std::filesystem::path config_path =
+        std::filesystem::path(settings.get_config_dir()) / "config.ini";
+
+    QSettings config(QString::fromStdString(config_path.string()), QSettings::IniFormat);
+    config.beginGroup("Settings");
+    config.setValue("CategorizeFiles", true);
+    config.endGroup();
+    config.sync();
+
+    Settings reloaded;
+    REQUIRE(reloaded.load());
+    REQUIRE(reloaded.get_use_subcategories());
 }
 
 TEST_CASE("Settings enforces rename-only implies offer rename") {

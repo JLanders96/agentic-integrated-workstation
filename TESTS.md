@@ -558,6 +558,13 @@ Procedure: Call `Settings::load()` and read image analysis flags.
 Expected outcome: `load()` returns false and analysis/offer-rename remain disabled.
 Run: `./build-tests/ai_file_sorter_tests "Settings defaults image analysis off when visual LLM files are missing"`
 
+#### Test case: Settings defaults use subcategories on when config key is missing
+Purpose: Ensure the main-window subcategory toggle stays enabled by default when older or partial config files omit the `UseSubcategories` key.
+Setup: Create a temporary config file with a `Settings` section that omits `UseSubcategories`.
+Procedure: Reload settings from disk.
+Expected outcome: `Settings::load()` succeeds and `get_use_subcategories()` returns `true`.
+Run: `./build-tests/ai_file_sorter_tests "Settings defaults use subcategories on when config key is missing"`
+
 #### Test case: Settings enforces rename-only implies offer rename
 Purpose: Ensure rename-only cannot be enabled without offer-rename.
 Setup: Save settings with analyze on, offer-rename off, and rename-only on.
