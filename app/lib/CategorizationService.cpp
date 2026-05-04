@@ -1,5 +1,9 @@
 #include "CategorizationService.hpp"
 
+#include "ArtifactCategoryPolicy.hpp"
+#include "DocumentCategoryPolicy.hpp"
+#include "FileCategoryPolicy.hpp"
+#include "ImageCategoryPolicy.hpp"
 #include "Settings.hpp"
 #include "CategoryLanguage.hpp"
 #include "DatabaseManager.hpp"
@@ -27,6 +31,7 @@
 #include <memory>
 #include <sstream>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -41,6 +46,7 @@ constexpr std::string_view kImageDescriptionMarker = "\nImage description: ";
 constexpr std::string_view kDocumentSummaryMarker = "\nDocument summary: ";
 constexpr int kMinimumLearnedPreferenceScore = 12;
 std::string to_lower_copy_str(std::string value);
+std::pair<std::string, std::string> split_category_subcategory(const std::string& input);
 
 std::string trim_copy(std::string value) {
     auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
@@ -417,6 +423,18 @@ bool has_image_description_context(const std::string& prompt_path) {
     return prompt_path.find(kImageDescriptionMarker) != std::string::npos;
 }
 
+bool is_image_prompt_context(const std::string& prompt_name,
+                             FileType file_type) {
+    return file_type == FileType::File &&
+           ImageCategoryPolicy::is_supported_image_file_name(prompt_name);
+}
+
+bool is_document_prompt_context(const std::string& prompt_name,
+                                FileType file_type) {
+    return file_type == FileType::File &&
+           DocumentCategoryPolicy::is_supported_document_file_name(prompt_name);
+}
+
 std::string extract_learning_context_text(const std::string& prompt_path) {
     if (prompt_path.find(kImageDescriptionMarker) == std::string::npos &&
         prompt_path.find(kDocumentSummaryMarker) == std::string::npos) {
@@ -441,6 +459,150 @@ std::string extract_image_description_text(const std::string& prompt_path) {
     }
 
     return prompt_path.substr(content_pos);
+}
+
+std::string extract_document_summary_text(const std::string& prompt_path) {
+    const auto marker_pos = prompt_path.find(kDocumentSummaryMarker);
+    if (marker_pos == std::string::npos) {
+        return {};
+    }
+
+    const std::size_t content_pos = marker_pos + kDocumentSummaryMarker.size();
+    if (content_pos >= prompt_path.size()) {
+        return {};
+    }
+
+    return prompt_path.substr(content_pos);
+}
+
+std::string extract_base_prompt_path(const std::string& prompt_path) {
+    const auto newline = prompt_path.find('\n');
+    if (newline == std::string::npos) {
+        return prompt_path;
+    }
+    return prompt_path.substr(0, newline);
+}
+
+std::string singularize_match_key(std::string value) {
+    const auto ends_with = [](std::string_view input, std::string_view suffix) {
+        return input.size() >= suffix.size() &&
+               input.substr(input.size() - suffix.size()) == suffix;
+    };
+
+    if (value.size() > 3 && ends_with(value, "ies")) {
+        value.resize(value.size() - 3);
+        value += 'y';
+        return value;
+    }
+    if (value.size() > 3 && value.back() == 's' && !ends_with(value, "ss")) {
+        value.pop_back();
+    }
+    return value;
+}
+
+std::string normalize_label_match_key(std::string value) {
+    value = to_lower_copy_str(normalize_candidate_label(std::move(value), true));
+    return singularize_match_key(std::move(value));
+}
+
+std::optional<std::string> match_allowed_label(const std::string& candidate,
+                                               const std::vector<std::string>& allowed) {
+    const std::string normalized_candidate = normalize_label_match_key(candidate);
+    if (normalized_candidate.empty()) {
+        return std::nullopt;
+    }
+
+    for (const auto& allowed_label : allowed) {
+        if (to_lower_copy_str(allowed_label) == to_lower_copy_str(normalize_candidate_label(candidate, true))) {
+            return allowed_label;
+        }
+    }
+
+    for (const auto& allowed_label : allowed) {
+        if (normalize_label_match_key(allowed_label) == normalized_candidate) {
+            return allowed_label;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::string> parse_json_string_field(const std::string& response,
+                                                   std::string_view field_name) {
+    Json::Value root;
+    Json::CharReaderBuilder reader;
+    std::string errors;
+    std::istringstream stream(response);
+    if (!Json::parseFromStream(reader, stream, &root, &errors) || !root.isObject()) {
+        return std::nullopt;
+    }
+
+    const Json::Value value = root[std::string(field_name)];
+    if (!value.isString()) {
+        return std::nullopt;
+    }
+
+    const std::string normalized = Utils::sanitize_path_label(
+        normalize_candidate_label(value.asString(), field_name == "main_category" || field_name == "category"));
+    if (normalized.empty()) {
+        return std::nullopt;
+    }
+    return normalized;
+}
+
+std::string extract_selected_main_category(const std::string& response,
+                                           const std::vector<std::string>& allowed_main_categories) {
+    for (std::string_view field_name : {"main_category", "category", "subcategory"}) {
+        if (const auto value = parse_json_string_field(response, field_name)) {
+            if (const auto matched = match_allowed_label(*value, allowed_main_categories)) {
+                return *matched;
+            }
+        }
+    }
+
+    auto [category, subcategory] = split_category_subcategory(response);
+    if (const auto matched = match_allowed_label(category, allowed_main_categories)) {
+        return *matched;
+    }
+    if (const auto matched = match_allowed_label(subcategory, allowed_main_categories)) {
+        return *matched;
+    }
+
+    std::istringstream iss(response);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (const auto matched = match_allowed_label(strip_list_prefix(std::move(line)), allowed_main_categories)) {
+            return *matched;
+        }
+    }
+
+    return {};
+}
+
+std::string extract_selected_subcategory(const std::string& response,
+                                         const std::string& selected_main_category) {
+    if (const auto value = parse_json_string_field(response, "subcategory")) {
+        if (normalize_label_match_key(*value) != normalize_label_match_key(selected_main_category)) {
+            return *value;
+        }
+    }
+
+    auto [category, subcategory] = split_category_subcategory(response);
+    if (!subcategory.empty()) {
+        return subcategory;
+    }
+    if (!category.empty() &&
+        normalize_label_match_key(category) != normalize_label_match_key(selected_main_category)) {
+        return category;
+    }
+
+    if (const auto value = parse_json_string_field(response, "category")) {
+        if (normalize_label_match_key(*value) != normalize_label_match_key(selected_main_category)) {
+            return *value;
+        }
+    }
+
+    return {};
 }
 
 bool is_screenshot_like_image_context(const std::string& prompt_name,
@@ -472,6 +634,97 @@ bool is_low_information_label(const std::string& label) {
            normalized == "uncategorized";
 }
 
+bool is_low_information_image_label(const std::string& label)
+{
+    const std::string normalized = to_lower_copy_str(trim_copy(label));
+    return is_low_information_label(label) ||
+           normalized == "image" ||
+           normalized == "images" ||
+           normalized == "photo" ||
+           normalized == "photos" ||
+           normalized == "picture" ||
+           normalized == "pictures" ||
+           normalized == "graphic" ||
+           normalized == "graphics" ||
+           normalized == "screenshot" ||
+           normalized == "screenshots" ||
+           normalized == "wallpaper" ||
+           normalized == "wallpapers";
+}
+
+bool is_stable_document_main_category(const std::string& label)
+{
+    const std::string normalized = to_lower_copy_str(trim_copy(label));
+    return normalized == "documents" ||
+           normalized == "presentations" ||
+           normalized == "spreadsheets" ||
+           normalized == "data exports" ||
+           normalized == "configs";
+}
+
+std::string choose_document_subcategory(const std::string& stable_main_category,
+                                        const std::string& category,
+                                        const std::string& subcategory)
+{
+    const auto same_label = [](const std::string& lhs, const std::string& rhs) {
+        return to_lower_copy_str(trim_copy(lhs)) == to_lower_copy_str(trim_copy(rhs));
+    };
+    const auto normalize_candidate = [&](const std::string& value, bool allow_stable_main) {
+        const std::string sanitized = Utils::sanitize_path_label(trim_copy(value));
+        if (sanitized.empty() || same_label(sanitized, stable_main_category)) {
+            return std::string();
+        }
+        if (is_low_information_label(sanitized)) {
+            return std::string();
+        }
+        if (!allow_stable_main && is_stable_document_main_category(sanitized)) {
+            return std::string();
+        }
+        return sanitized;
+    };
+
+    if (const std::string candidate = normalize_candidate(subcategory, false); !candidate.empty()) {
+        return candidate;
+    }
+    if (const std::string candidate = normalize_candidate(category, false); !candidate.empty()) {
+        return candidate;
+    }
+    if (const std::string candidate = normalize_candidate(subcategory, true); !candidate.empty()) {
+        return candidate;
+    }
+    if (const std::string candidate = normalize_candidate(category, true); !candidate.empty()) {
+        return candidate;
+    }
+    return "General";
+}
+
+std::string choose_image_subcategory(const std::string& stable_main_category,
+                                     const std::string& category,
+                                     const std::string& subcategory)
+{
+    const auto same_label = [](const std::string& lhs, const std::string& rhs) {
+        return to_lower_copy_str(trim_copy(lhs)) == to_lower_copy_str(trim_copy(rhs));
+    };
+    const auto normalize_candidate = [&](const std::string& value) {
+        const std::string sanitized = Utils::sanitize_path_label(trim_copy(value));
+        if (sanitized.empty() || same_label(sanitized, stable_main_category)) {
+            return std::string();
+        }
+        if (is_low_information_image_label(sanitized)) {
+            return std::string();
+        }
+        return sanitized;
+    };
+
+    if (const std::string candidate = normalize_candidate(subcategory); !candidate.empty()) {
+        return candidate;
+    }
+    if (const std::string candidate = normalize_candidate(category); !candidate.empty()) {
+        return candidate;
+    }
+    return "General";
+}
+
 // Returns true when the value appears in the allowed list (case-insensitive).
 bool is_allowed(const std::string& value, const std::vector<std::string>& allowed) {
     if (allowed.empty()) {
@@ -484,6 +737,67 @@ bool is_allowed(const std::string& value, const std::vector<std::string>& allowe
         }
     }
     return false;
+}
+
+std::pair<std::string, std::string> normalize_image_category_labels(
+    const std::string& prompt_name,
+    FileType file_type,
+    const std::string& category,
+    const std::string& subcategory,
+    bool whitelist_enabled,
+    const std::vector<std::string>& allowed_categories)
+{
+    if (!is_image_prompt_context(prompt_name, file_type)) {
+        return {category, subcategory};
+    }
+    if (whitelist_enabled && !is_allowed("Images", allowed_categories)) {
+        return {category, subcategory};
+    }
+
+    const auto stable_main = ImageCategoryPolicy::preferred_main_category_for_file_name(prompt_name);
+    if (!stable_main) {
+        return {category, subcategory};
+    }
+
+    return {*stable_main, choose_image_subcategory(*stable_main, category, subcategory)};
+}
+
+std::pair<std::string, std::string> normalize_document_category_labels(
+    const std::string& prompt_name,
+    FileType file_type,
+    const std::string& category,
+    const std::string& subcategory,
+    bool whitelist_enabled)
+{
+    if (file_type != FileType::File || whitelist_enabled) {
+        return {category, subcategory};
+    }
+
+    const auto stable_main = DocumentCategoryPolicy::preferred_main_category_for_file_name(prompt_name);
+    if (!stable_main) {
+        return {category, subcategory};
+    }
+
+    return {*stable_main, choose_document_subcategory(*stable_main, category, subcategory)};
+}
+
+std::pair<std::string, std::string> normalize_artifact_category_labels(
+    const std::string& prompt_name,
+    FileType file_type,
+    const std::string& category,
+    const std::string& subcategory,
+    bool whitelist_enabled)
+{
+    if (file_type != FileType::File || whitelist_enabled) {
+        return {category, subcategory};
+    }
+
+    const auto normalized = ArtifactCategoryPolicy::normalize_category_labels(prompt_name, category, subcategory);
+    if (!normalized) {
+        return {category, subcategory};
+    }
+
+    return {normalized->category, normalized->subcategory};
 }
 
 // Returns the first allowed entry or an empty string when the list is empty.
@@ -882,6 +1196,194 @@ std::string CategorizationService::build_whitelist_context() const
     return oss.str();
 }
 
+std::string CategorizationService::build_main_category_candidate_context(const std::string& prompt_name,
+                                                                         FileType file_type) const
+{
+    if (settings.get_use_whitelist()) {
+        return std::string();
+    }
+
+    const auto selection = FileCategoryPolicy::determine_main_category_selection(prompt_name, file_type);
+    if (selection.categories.empty()) {
+        return std::string();
+    }
+
+    std::ostringstream oss;
+    oss << "Allowed main categories (pick exactly one label from the numbered list):\n";
+    for (std::size_t i = 0; i < selection.categories.size(); ++i) {
+        oss << (i + 1) << ") " << selection.categories[i] << "\n";
+    }
+
+    if (std::find(selection.categories.begin(), selection.categories.end(), "Other") !=
+        selection.categories.end()) {
+        oss << "Use Other only when none of the listed family categories clearly fits the file.\n";
+    }
+
+    oss << "Allowed subcategories: any (pick a specific, relevant subcategory; do not repeat the main category).";
+    return oss.str();
+}
+
+std::vector<std::string> CategorizationService::determine_main_category_candidates(const std::string& prompt_name,
+                                                                                   FileType file_type) const
+{
+    if (file_type != FileType::File) {
+        return {};
+    }
+
+    if (settings.get_use_whitelist()) {
+        return settings.get_allowed_categories();
+    }
+
+    return FileCategoryPolicy::determine_main_category_selection(prompt_name, file_type).categories;
+}
+
+std::string CategorizationService::build_main_category_selection_prompt(
+    const std::string& prompt_name,
+    const std::string& prompt_path,
+    FileType file_type,
+    const std::vector<std::string>& allowed_main_categories) const
+{
+    std::ostringstream prompt;
+    const std::string language_block = build_category_language_context();
+    if (!language_block.empty()) {
+        prompt << language_block << "\n\n";
+    }
+
+    prompt << (file_type == FileType::File
+                   ? "Choose the best main category for this file.\n"
+                   : "Choose the best main category for this directory.\n");
+    prompt << "Return only JSON in this exact shape: {\"main_category\":\"...\"}\n";
+    prompt << "Rules:\n";
+    prompt << "- Pick exactly one label from the allowed main categories list.\n";
+    prompt << "- Do not return a subcategory.\n";
+    prompt << "- Do not explain.\n";
+    prompt << "- Do not add extra keys.\n";
+    prompt << "- Keep the answer broad and filesystem-friendly.\n\n";
+    prompt << "Allowed main categories:\n";
+    for (std::size_t i = 0; i < allowed_main_categories.size(); ++i) {
+        prompt << (i + 1) << ") " << allowed_main_categories[i] << "\n";
+    }
+    if (std::find(allowed_main_categories.begin(), allowed_main_categories.end(), "Other") !=
+        allowed_main_categories.end()) {
+        prompt << "Use Other only when none of the listed categories clearly fits.\n";
+    }
+
+    const std::string base_path = extract_base_prompt_path(prompt_path);
+    prompt << "\n" << (file_type == FileType::File ? "File name: " : "Directory name: ")
+           << prompt_name << "\n";
+    if (!base_path.empty()) {
+        prompt << "Path: " << base_path << "\n";
+    }
+    if (is_image_prompt_context(prompt_name, file_type)) {
+        const std::string description = extract_image_description_text(prompt_path);
+        if (!description.empty()) {
+            prompt << "Image description: " << description << "\n";
+        }
+    } else if (is_document_prompt_context(prompt_name, file_type)) {
+        const std::string summary = extract_document_summary_text(prompt_path);
+        if (!summary.empty()) {
+            prompt << "Document summary: " << summary << "\n";
+        }
+    }
+
+    return prompt.str();
+}
+
+std::string CategorizationService::build_subcategory_selection_prompt(
+    const std::string& prompt_name,
+    const std::string& prompt_path,
+    FileType file_type,
+    const std::string& selected_main_category,
+    const std::string& consistency_context) const
+{
+    std::ostringstream prompt;
+    prompt << (file_type == FileType::File
+                   ? "Choose a specific subcategory for this file.\n"
+                   : "Choose a specific subcategory for this directory.\n");
+    prompt << "Return only JSON in this exact shape: {\"subcategory\":\"...\"}\n";
+    prompt << "Rules:\n";
+    prompt << "- The main category is already fixed to: " << selected_main_category << "\n";
+    prompt << "- Do not change or repeat the main category.\n";
+    prompt << "- If the context mentions Allowed main categories, ignore that list because the main category is already fixed.\n";
+    prompt << "- If the context mentions Allowed subcategories, choose one of them.\n";
+    prompt << "- Do not explain.\n";
+    prompt << "- Do not add extra keys.\n";
+    prompt << "- Keep the subcategory specific and concise.\n\n";
+
+    const std::string base_path = extract_base_prompt_path(prompt_path);
+    prompt << (file_type == FileType::File ? "File name: " : "Directory name: ")
+           << prompt_name << "\n";
+    if (!base_path.empty()) {
+        prompt << "Path: " << base_path << "\n";
+    }
+    if (is_image_prompt_context(prompt_name, file_type)) {
+        const std::string description = extract_image_description_text(prompt_path);
+        if (!description.empty()) {
+            prompt << "Image description: " << description << "\n";
+        }
+    } else if (is_document_prompt_context(prompt_name, file_type)) {
+        const std::string summary = extract_document_summary_text(prompt_path);
+        if (!summary.empty()) {
+            prompt << "Document summary: " << summary << "\n";
+        }
+    }
+    if (!consistency_context.empty()) {
+        prompt << "\n" << consistency_context;
+    }
+
+    return prompt.str();
+}
+
+std::optional<CategorizationService::CategoryPair> CategorizationService::categorize_via_split_prompts(
+    ILLMClient& llm,
+    const std::string& prompt_name,
+    const std::string& prompt_path,
+    FileType file_type,
+    bool is_local_llm,
+    const std::string& consistency_context) const
+{
+    const auto allowed_main_categories = determine_main_category_candidates(prompt_name, file_type);
+    if (allowed_main_categories.empty()) {
+        return std::nullopt;
+    }
+
+    std::string selected_main_category;
+    if (allowed_main_categories.size() == 1) {
+        selected_main_category = allowed_main_categories.front();
+    } else {
+        const std::string main_prompt = build_main_category_selection_prompt(prompt_name,
+                                                                             prompt_path,
+                                                                             file_type,
+                                                                             allowed_main_categories);
+        const std::string main_response = run_prompt_completion_with_timeout(llm,
+                                                                             main_prompt,
+                                                                             48,
+                                                                             is_local_llm);
+        selected_main_category = extract_selected_main_category(main_response, allowed_main_categories);
+    }
+
+    if (selected_main_category.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string subcategory_prompt = build_subcategory_selection_prompt(prompt_name,
+                                                                              prompt_path,
+                                                                              file_type,
+                                                                              selected_main_category,
+                                                                              consistency_context);
+    const std::string subcategory_response = run_prompt_completion_with_timeout(llm,
+                                                                                subcategory_prompt,
+                                                                                96,
+                                                                                is_local_llm);
+    const std::string selected_subcategory = extract_selected_subcategory(subcategory_response,
+                                                                          selected_main_category);
+    if (selected_subcategory.empty()) {
+        return std::nullopt;
+    }
+
+    return CategoryPair{selected_main_category, selected_subcategory};
+}
+
 std::string CategorizationService::build_whitelist_context_for_prompt(const std::string& prompt_name,
                                                                       const std::string& prompt_path) const
 {
@@ -987,7 +1489,8 @@ std::string CategorizationService::build_large_whitelist_candidate_context(const
 }
 
 std::string CategorizationService::build_learned_candidate_context(const std::string& prompt_name,
-                                                                   const std::string& prompt_path) const
+                                                                   const std::string& prompt_path,
+                                                                   FileType file_type) const
 {
     if (!user_learning_store_ || !user_learning_store_->is_open()) {
         return std::string();
@@ -1000,31 +1503,69 @@ std::string CategorizationService::build_learned_candidate_context(const std::st
     }
 
     const auto candidates = user_learning_store_->retrieve_taxonomy_candidates(query, 5);
-    if (candidates.empty()) {
-        return std::string();
-    }
-
     std::ostringstream oss;
-    oss << "User-learned category candidates from approved behavior and whitelists:\n";
-    for (std::size_t i = 0; i < candidates.size(); ++i) {
-        const auto& candidate = candidates[i];
-        oss << (i + 1) << ") " << candidate.category;
-        if (!candidate.subcategory.empty()) {
-            oss << " : " << candidate.subcategory;
+    const auto family_selection =
+        settings.get_use_whitelist()
+            ? FileCategoryPolicy::MainCategorySelection{}
+            : FileCategoryPolicy::determine_main_category_selection(prompt_name, file_type);
+    const auto normalize_candidate_for_prompt = [&](std::string category, std::string subcategory) {
+        std::tie(category, subcategory) = normalize_image_category_labels(prompt_name,
+                                                                          file_type,
+                                                                          category,
+                                                                          subcategory,
+                                                                          settings.get_use_whitelist(),
+                                                                          settings.get_allowed_categories());
+        std::tie(category, subcategory) = normalize_document_category_labels(prompt_name,
+                                                                             file_type,
+                                                                             category,
+                                                                             subcategory,
+                                                                             settings.get_use_whitelist());
+        std::tie(category, subcategory) = normalize_artifact_category_labels(prompt_name,
+                                                                             file_type,
+                                                                             category,
+                                                                             subcategory,
+                                                                             settings.get_use_whitelist());
+        return CategoryPair{std::move(category), std::move(subcategory)};
+    };
+
+    std::size_t emitted = 0;
+    for (const auto& candidate : candidates) {
+        if (candidate.score < kMinimumLearnedPreferenceScore) {
+            continue;
+        }
+        auto [normalized_category, normalized_subcategory] =
+            normalize_candidate_for_prompt(candidate.category, candidate.subcategory);
+        if (!family_selection.categories.empty() &&
+            !is_allowed(normalized_category, family_selection.categories)) {
+            continue;
+        }
+        if (emitted == 0) {
+            oss << "User-learned category candidates from approved behavior and whitelists:\n";
+        }
+        oss << (emitted + 1) << ") " << normalized_category;
+        if (!normalized_subcategory.empty()) {
+            oss << " : " << normalized_subcategory;
         } else {
             oss << " : choose a specific relevant subcategory";
         }
         oss << "\n";
+        ++emitted;
     }
+
+    if (emitted == 0) {
+        return std::string();
+    }
+
     oss << "Prefer one of these user-learned candidates when it fits the file. "
-	           "If none fits, choose a better category and subcategory for review.";
+           "If none fits, choose a better category and subcategory for review.";
     return oss.str();
 }
 
 DatabaseManager::ResolvedCategory CategorizationService::prefer_learned_candidate_for_generic_result(
     const DatabaseManager::ResolvedCategory& resolved,
     const std::string& prompt_name,
-    const std::string& prompt_path) const
+    const std::string& prompt_path,
+    FileType file_type) const
 {
     if (!user_learning_store_ || !user_learning_store_->is_open()) {
         return resolved;
@@ -1041,9 +1582,33 @@ DatabaseManager::ResolvedCategory CategorizationService::prefer_learned_candidat
         return resolved;
     }
 
-    const auto& candidate = candidates.front();
+    auto candidate = candidates.front();
+    std::tie(candidate.category, candidate.subcategory) = normalize_image_category_labels(prompt_name,
+                                                                                          file_type,
+                                                                                          candidate.category,
+                                                                                          candidate.subcategory,
+                                                                                          settings.get_use_whitelist(),
+                                                                                          settings.get_allowed_categories());
+    std::tie(candidate.category, candidate.subcategory) = normalize_document_category_labels(prompt_name,
+                                                                                             file_type,
+                                                                                             candidate.category,
+                                                                                             candidate.subcategory,
+                                                                                             settings.get_use_whitelist());
+    std::tie(candidate.category, candidate.subcategory) = normalize_artifact_category_labels(prompt_name,
+                                                                                             file_type,
+                                                                                             candidate.category,
+                                                                                             candidate.subcategory,
+                                                                                             settings.get_use_whitelist());
     const auto allowed_categories = settings.get_allowed_categories();
     const auto allowed_subcategories = settings.get_allowed_subcategories();
+    if (!settings.get_use_whitelist()) {
+        const auto family_selection =
+            FileCategoryPolicy::determine_main_category_selection(prompt_name, file_type);
+        if (!family_selection.categories.empty() &&
+            !is_allowed(candidate.category, family_selection.categories)) {
+            return resolved;
+        }
+    }
     if (settings.get_use_whitelist() && !is_allowed(candidate.category, allowed_categories)) {
         return resolved;
     }
@@ -1191,14 +1756,79 @@ DatabaseManager::ResolvedCategory CategorizationService::categorize_via_llm(
     const std::string& consistency_context) const
 {
     try {
-        const std::string category_subcategory =
-            run_llm_with_timeout(llm, prompt_name, prompt_path, file_type, is_local_llm, consistency_context);
+        std::string category;
+        std::string subcategory;
 
-        auto [category, subcategory] = split_category_subcategory(category_subcategory);
+        if (const auto split_result = categorize_via_split_prompts(llm,
+                                                                   prompt_name,
+                                                                   prompt_path,
+                                                                   file_type,
+                                                                   is_local_llm,
+                                                                   consistency_context)) {
+            category = split_result->first;
+            subcategory = split_result->second;
+        } else {
+            const std::string category_subcategory =
+                run_llm_with_timeout(llm, prompt_name, prompt_path, file_type, is_local_llm, consistency_context);
+            std::tie(category, subcategory) = split_category_subcategory(category_subcategory);
+            if (core_logger) {
+                core_logger->debug("Fell back to one-shot categorization for '{}'", display_name);
+            }
+        }
+
+        const auto allowed_categories = settings.get_allowed_categories();
+        const auto allowed_subcategories = settings.get_allowed_subcategories();
+        const std::string original_category = category;
+        const std::string original_subcategory = subcategory;
+        std::tie(category, subcategory) = normalize_image_category_labels(prompt_name,
+                                                                          file_type,
+                                                                          category,
+                                                                          subcategory,
+                                                                          settings.get_use_whitelist(),
+                                                                          allowed_categories);
+        if (core_logger &&
+            (category != original_category || subcategory != original_subcategory)) {
+            core_logger->info("Normalized image category for '{}' from '{}'/'{}' to '{}'/'{}'",
+                              display_name,
+                              original_category,
+                              original_subcategory,
+                              category,
+                              subcategory);
+        }
+        const std::string pre_document_category = category;
+        const std::string pre_document_subcategory = subcategory;
+        std::tie(category, subcategory) = normalize_document_category_labels(prompt_name,
+                                                                             file_type,
+                                                                             category,
+                                                                             subcategory,
+                                                                             settings.get_use_whitelist());
+        if (core_logger &&
+            (category != pre_document_category || subcategory != pre_document_subcategory)) {
+            core_logger->info("Normalized document category for '{}' from '{}'/'{}' to '{}'/'{}'",
+                              display_name,
+                              pre_document_category,
+                              pre_document_subcategory,
+                              category,
+                              subcategory);
+        }
+        const std::string pre_artifact_category = category;
+        const std::string pre_artifact_subcategory = subcategory;
+        std::tie(category, subcategory) = normalize_artifact_category_labels(prompt_name,
+                                                                             file_type,
+                                                                             category,
+                                                                             subcategory,
+                                                                             settings.get_use_whitelist());
+        if (core_logger &&
+            (category != pre_artifact_category || subcategory != pre_artifact_subcategory)) {
+            core_logger->info("Normalized artifact category for '{}' from '{}'/'{}' to '{}'/'{}'",
+                              display_name,
+                              pre_artifact_category,
+                              pre_artifact_subcategory,
+                              category,
+                              subcategory);
+        }
         auto resolved = db_manager.resolve_category(category, subcategory);
         if (settings.get_use_whitelist()) {
-            const auto allowed_categories = settings.get_allowed_categories();
-            const auto allowed_subcategories = settings.get_allowed_subcategories();
             if (!is_allowed(resolved.category, allowed_categories)) {
                 resolved.category = first_allowed_or_blank(allowed_categories);
             }
@@ -1206,7 +1836,7 @@ DatabaseManager::ResolvedCategory CategorizationService::categorize_via_llm(
                 resolved.subcategory = first_allowed_or_blank(allowed_subcategories);
             }
         }
-        resolved = prefer_learned_candidate_for_generic_result(resolved, prompt_name, prompt_path);
+        resolved = prefer_learned_candidate_for_generic_result(resolved, prompt_name, prompt_path, file_type);
         const auto validation = validate_labels(resolved.category, resolved.subcategory);
         if (!validation.valid) {
             if (progress_callback) {
@@ -1420,20 +2050,42 @@ std::string CategorizationService::build_combined_context(const std::string& hin
         : std::string();
     const std::string learned_candidate_block = large_whitelist
         ? std::string()
-        : build_learned_candidate_context(prompt_name, prompt_path);
+        : build_learned_candidate_context(prompt_name, prompt_path, file_type);
     const std::string language_block = build_category_language_context();
+    const std::string family_candidate_block =
+        build_main_category_candidate_context(prompt_name, file_type);
+    const bool image_context = is_image_prompt_context(prompt_name, file_type);
     const bool rich_image_context =
-        file_type == FileType::File && has_image_description_context(prompt_path);
+        image_context && has_image_description_context(prompt_path);
+    const bool document_context = is_document_prompt_context(prompt_name, file_type);
     std::string image_block;
+    std::string document_block;
 
-    if (rich_image_context) {
+    if (image_context) {
         std::ostringstream image_guidance;
         image_guidance
             << "Image categorization guidance:\n"
+            << "- Keep the main category stable and filesystem-oriented.\n";
+
+        if (settings.get_use_whitelist() && !is_allowed("Images", allowed_categories)) {
+            image_guidance
+                << "- Respect the active whitelist if one is provided.\n"
+                << "- Prefer image-focused labels, and put the depicted subject, scene, or on-screen content in the subcategory when the whitelist allows it.\n";
+        } else {
+            image_guidance
+                << "- Always use Images as the main category, and put the depicted subject, scene, or on-screen content in the subcategory.\n";
+        }
+
+        image_guidance
             << "- Categorize the subject matter shown in the image, not merely the file format.\n"
             << "- Treat screenshots, webpage captures, dashboards, forms, mockups, and app interfaces as images depicting content.\n"
             << "- Do not classify a PNG/JPG/WebP screenshot as Software, Operating Systems, Installers, Databases, or similar artifact categories unless the file itself is actually such an artifact.\n"
-            << "- Use the image description, visible text, and scene context to choose a content-focused category and subcategory.\n";
+            << "- Use the filename, extension, and directory context as supporting clues.\n";
+
+        if (rich_image_context) {
+            image_guidance
+                << "- Use the image description as the primary evidence when it is available.\n";
+        }
 
         if (is_screenshot_like_image_context(prompt_name, prompt_path)) {
             image_guidance
@@ -1444,6 +2096,29 @@ std::string CategorizationService::build_combined_context(const std::string& hin
         image_block = image_guidance.str();
     }
 
+    if (document_context) {
+        std::ostringstream document_guidance;
+        document_guidance
+            << "Document categorization guidance:\n"
+            << "- Categorize the document by its subject matter and content, not merely by its file extension or the application that may have created it.\n"
+            << "- Use any provided document summary as the primary evidence when available, and use the filename, extension, and directory context only as supporting clues.\n";
+
+        if (settings.get_use_whitelist()) {
+            document_guidance
+                << "- Respect the active whitelist if one is provided.\n"
+                << "- Keep the main category broad and filesystem-friendly, and put the specific topic in the subcategory when the whitelist allows it.\n";
+        } else {
+            document_guidance
+                << "- Keep the main category stable and filesystem-oriented.\n"
+                << "- Prefer one of these main categories when it clearly fits: Documents, Presentations, Spreadsheets, Data Exports, Configs.\n"
+                << "- Default to Documents for ordinary PDFs, word-processing files, notes, manuals, letters, brochures, certificates, policies, reports, and articles.\n"
+                << "- Use Presentations only for slide decks, Spreadsheets only for workbook-like tabular files, Data Exports only for export-style tabular data files, and Configs only for configuration files.\n"
+                << "- Put the specific topic or subject matter in the subcategory instead of inventing a topical main category like Security, Marketing, or Computing.\n";
+        }
+
+        document_block = document_guidance.str();
+    }
+
     if (!language_block.empty()) {
         combined_context += language_block;
     }
@@ -1452,6 +2127,18 @@ std::string CategorizationService::build_combined_context(const std::string& hin
             combined_context += "\n\n";
         }
         combined_context += image_block;
+    }
+    if (!document_block.empty()) {
+        if (!combined_context.empty()) {
+            combined_context += "\n\n";
+        }
+        combined_context += document_block;
+    }
+    if (!family_candidate_block.empty()) {
+        if (!combined_context.empty()) {
+            combined_context += "\n\n";
+        }
+        combined_context += family_candidate_block;
     }
     if (settings.get_use_whitelist() && !whitelist_block.empty()) {
         if (core_logger) {
@@ -1669,6 +2356,22 @@ std::string CategorizationService::run_llm_with_timeout(
     return future.get();
 }
 
+std::string CategorizationService::run_prompt_completion_with_timeout(
+    ILLMClient& llm,
+    const std::string& prompt,
+    int max_tokens,
+    bool is_local_llm) const
+{
+    const int timeout_seconds = resolve_llm_timeout(is_local_llm);
+    auto future = start_prompt_completion_future(llm, prompt, max_tokens);
+
+    if (future.wait_for(std::chrono::seconds(timeout_seconds)) == std::future_status::timeout) {
+        throw std::runtime_error("Timed out waiting for LLM response");
+    }
+
+    return future.get();
+}
+
 int CategorizationService::resolve_llm_timeout(bool is_local_llm) const
 {
     int timeout_seconds = is_local_llm ? 60 : 10;
@@ -1716,6 +2419,29 @@ std::future<std::string> CategorizationService::start_llm_future(
     std::thread([&llm, promise, item_name, item_path, file_type, consistency_context]() mutable {
         try {
             promise->set_value(llm.categorize_file(item_name, item_path, file_type, consistency_context));
+        } catch (...) {
+            try {
+                promise->set_exception(std::current_exception());
+            } catch (...) {
+                // no-op
+            }
+        }
+    }).detach();
+
+    return future;
+}
+
+std::future<std::string> CategorizationService::start_prompt_completion_future(
+    ILLMClient& llm,
+    const std::string& prompt,
+    int max_tokens) const
+{
+    auto promise = std::make_shared<std::promise<std::string>>();
+    std::future<std::string> future = promise->get_future();
+
+    std::thread([&llm, promise, prompt, max_tokens]() mutable {
+        try {
+            promise->set_value(llm.complete_prompt(prompt, max_tokens));
         } catch (...) {
             try {
                 promise->set_exception(std::current_exception());

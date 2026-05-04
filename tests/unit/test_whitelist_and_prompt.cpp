@@ -18,6 +18,7 @@
 #include <atomic>
 #include <deque>
 #include <memory>
+#include <vector>
 
 namespace {
 class FixedResponseLLM : public ILLMClient {
@@ -34,7 +35,8 @@ public:
     }
 
     std::string complete_prompt(const std::string&, int) override {
-        return std::string();
+        ++(*calls_);
+        return response_;
     }
 
     void set_prompt_logging_enabled(bool) override {
@@ -68,8 +70,13 @@ public:
         return response_;
     }
 
-    std::string complete_prompt(const std::string&, int) override {
-        return std::string();
+    std::string complete_prompt(const std::string& prompt, int) override {
+        ++(*calls_);
+        *captured_path_ = prompt;
+        if (captured_context_) {
+            *captured_context_ = prompt;
+        }
+        return response_;
     }
 
     void set_prompt_logging_enabled(bool) override {
@@ -101,14 +108,19 @@ public:
         return categorize_response_;
     }
 
-    std::string complete_prompt(const std::string&, int) override {
-        ++(*translation_calls_);
-        if (translation_responses_.empty()) {
-            return std::string();
+    std::string complete_prompt(const std::string& prompt, int) override {
+        if (prompt.find("Translate the following taxonomy labels into") != std::string::npos) {
+            ++(*translation_calls_);
+            if (translation_responses_.empty()) {
+                return std::string();
+            }
+            std::string response = translation_responses_.front();
+            translation_responses_.pop_front();
+            return response;
         }
-        std::string response = translation_responses_.front();
-        translation_responses_.pop_front();
-        return response;
+
+        ++(*categorize_calls_);
+        return categorize_response_;
     }
 
     void set_prompt_logging_enabled(bool) override {
@@ -119,6 +131,43 @@ private:
     std::shared_ptr<int> translation_calls_;
     std::string categorize_response_;
     std::deque<std::string> translation_responses_;
+};
+
+class SequencedCompletionLLM : public ILLMClient {
+public:
+    SequencedCompletionLLM(std::shared_ptr<int> calls,
+                           std::shared_ptr<std::vector<std::string>> prompts,
+                           std::deque<std::string> responses)
+        : calls_(std::move(calls)),
+          prompts_(std::move(prompts)),
+          responses_(std::move(responses)) {}
+
+    std::string categorize_file(const std::string&,
+                                const std::string&,
+                                FileType,
+                                const std::string&) override {
+        ++(*calls_);
+        return responses_.empty() ? std::string() : responses_.front();
+    }
+
+    std::string complete_prompt(const std::string& prompt, int) override {
+        ++(*calls_);
+        prompts_->push_back(prompt);
+        if (responses_.empty()) {
+            return std::string();
+        }
+        std::string response = responses_.front();
+        responses_.pop_front();
+        return response;
+    }
+
+    void set_prompt_logging_enabled(bool) override {
+    }
+
+private:
+    std::shared_ptr<int> calls_;
+    std::shared_ptr<std::vector<std::string>> prompts_;
+    std::deque<std::string> responses_;
 };
 } // namespace
 
@@ -378,8 +427,7 @@ TEST_CASE("CategorizationService adds relevant learned taxonomy candidates to co
         FileType::File);
 
     CHECK(context.find("User-learned category candidates") != std::string::npos);
-    CHECK(context.find("Manuals : Camera Guides") != std::string::npos);
-    CHECK(context.find("Spreadsheets") == std::string::npos);
+    CHECK(context.find("Documents : Camera Guides") != std::string::npos);
 }
 
 TEST_CASE("CategorizationService prefers learned candidates over generic model categories") {
@@ -422,9 +470,9 @@ TEST_CASE("CategorizationService prefers learned candidates over generic model c
                                                         factory);
 
     REQUIRE(categorized.size() == 1);
-    CHECK(categorized.front().canonical_category == "Manuals");
+    CHECK(categorized.front().canonical_category == "Documents");
     CHECK(categorized.front().canonical_subcategory == "Camera Guides");
-    CHECK(categorized.front().category == "Manuals");
+    CHECK(categorized.front().category == "Documents");
     CHECK(categorized.front().subcategory == "Camera Guides");
 }
 
@@ -534,7 +582,7 @@ TEST_CASE("CategorizationService parses category output without spaced colon del
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Documents");
     CHECK(categorized.front().subcategory == "Invoices");
-    CHECK(*calls == 1);
+    CHECK(*calls == 2);
 }
 
 TEST_CASE("CategorizationService parses labeled category and subcategory lines") {
@@ -552,7 +600,7 @@ TEST_CASE("CategorizationService parses labeled category and subcategory lines")
     std::atomic<bool> stop_flag{false};
     auto calls = std::make_shared<int>(0);
     auto factory = [calls]() {
-        return std::make_unique<FixedResponseLLM>(calls, "Category: Images\nSubcategory: Photos");
+        return std::make_unique<FixedResponseLLM>(calls, "Category: Images\nSubcategory: Seal Portraits");
     };
 
     const auto categorized = service.categorize_entries(files,
@@ -566,7 +614,7 @@ TEST_CASE("CategorizationService parses labeled category and subcategory lines")
 
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Images");
-    CHECK(categorized.front().subcategory == "Photos");
+    CHECK(categorized.front().subcategory == "Seal Portraits");
     CHECK(*calls == 1);
 }
 
@@ -587,7 +635,7 @@ TEST_CASE("CategorizationService extracts the trailing pair from verbose respons
     auto factory = [calls]() {
         return std::make_unique<FixedResponseLLM>(
             calls,
-            "Based on the filename and extension, the most appropriate categorization is: Images : Screenshots");
+            "Based on the filename and extension, the most appropriate categorization is: Images : Dashboard Interfaces");
     };
 
     const auto categorized = service.categorize_entries(files,
@@ -601,7 +649,7 @@ TEST_CASE("CategorizationService extracts the trailing pair from verbose respons
 
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Images");
-    CHECK(categorized.front().subcategory == "Screenshots");
+    CHECK(categorized.front().subcategory == "Dashboard Interfaces");
     CHECK(*calls == 1);
 }
 
@@ -639,7 +687,7 @@ TEST_CASE("CategorizationService prefers the final pair when the model echoes ex
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Archives");
     CHECK(categorized.front().subcategory == "CAD assets");
-    CHECK(*calls == 1);
+    CHECK(*calls == 2);
 }
 
 TEST_CASE("CategorizationService strips rationale from subcategory text") {
@@ -672,9 +720,9 @@ TEST_CASE("CategorizationService strips rationale from subcategory text") {
                                                         factory);
 
     REQUIRE(categorized.size() == 1);
-    CHECK(categorized.front().category == "Operating system");
+    CHECK(categorized.front().category == "Operating Systems");
     CHECK(categorized.front().subcategory == "MacOS");
-    CHECK(*calls == 1);
+    CHECK(*calls == 2);
 }
 
 TEST_CASE("CategorizationService extracts a short category from natural language lead-ins") {
@@ -707,9 +755,9 @@ TEST_CASE("CategorizationService extracts a short category from natural language
                                                         factory);
 
     REQUIRE(categorized.size() == 1);
-    CHECK(categorized.front().category == "Finances");
+    CHECK(categorized.front().category == "Documents");
     CHECK(categorized.front().subcategory == "Credit reports");
-    CHECK(*calls == 1);
+    CHECK(*calls == 2);
 }
 
 TEST_CASE("CategorizationService ignores trailing note lines after a valid answer") {
@@ -729,7 +777,7 @@ TEST_CASE("CategorizationService ignores trailing note lines after a valid answe
     auto factory = [calls]() {
         return std::make_unique<FixedResponseLLM>(
             calls,
-            "Images : Screenshots\n"
+            "Images : UI Dashboards\n"
             "(Note: Since the file is an image and not an installer, this question should not have been directed to me.)");
     };
 
@@ -744,7 +792,7 @@ TEST_CASE("CategorizationService ignores trailing note lines after a valid answe
 
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Images");
-    CHECK(categorized.front().subcategory == "Screenshots");
+    CHECK(categorized.front().subcategory == "UI Dashboards");
     CHECK(*calls == 1);
 }
 
@@ -785,7 +833,7 @@ TEST_CASE("CategorizationService progress shows current and categorization paths
 
     REQUIRE(categorized.size() == 1);
     REQUIRE(progress_messages.size() == 1);
-    CHECK(progress_messages.front().find("Category            : Security") != std::string::npos);
+    CHECK(progress_messages.front().find("Category            : Documents") != std::string::npos);
     CHECK(progress_messages.front().find("Subcat              : PCI DSS guidelines") != std::string::npos);
     CHECK(progress_messages.front().find("Current Path        : " +
                                          Utils::abbreviate_user_path(full_path)) != std::string::npos);
@@ -922,6 +970,656 @@ TEST_CASE("CategorizationService preserves analysis context for learned behavior
     CHECK(categorized.front().learning_context == "Document summary: " + summary);
 }
 
+TEST_CASE("CategorizationService adds stable guidance for supported document prompts") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    const std::string prompt_name = "pci_dss_quick_reference.pdf";
+    const std::string prompt_path = MainAppTestAccess::build_document_prompt_path(
+        (base_dir.path() / prompt_name).string(),
+        prompt_name,
+        "Quick reference to PCI DSS controls for merchants.");
+
+    const std::string context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        prompt_name,
+        prompt_path,
+        FileType::File);
+
+    CHECK(context.find("Document categorization guidance:") != std::string::npos);
+    CHECK(context.find("Prefer one of these main categories when it clearly fits: Documents, Presentations, Spreadsheets, Data Exports, Configs.") != std::string::npos);
+    CHECK(context.find("Put the specific topic or subject matter in the subcategory") != std::string::npos);
+    CHECK(context.find("Allowed main categories") != std::string::npos);
+    CHECK(context.find("1) Documents") != std::string::npos);
+    CHECK(context.find("2) Presentations") != std::string::npos);
+    CHECK(context.find("5) Configs") != std::string::npos);
+
+    const std::string legacy_prompt_name = "file-sample_100kB.doc";
+    const std::string legacy_prompt_path = (base_dir.path() / legacy_prompt_name).string();
+    const std::string legacy_context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        legacy_prompt_name,
+        legacy_prompt_path,
+        FileType::File);
+
+    CHECK(legacy_context.find("Document categorization guidance:") != std::string::npos);
+    CHECK(legacy_context.find("Prefer one of these main categories when it clearly fits: Documents, Presentations, Spreadsheets, Data Exports, Configs.") != std::string::npos);
+    CHECK(legacy_context.find("Allowed main categories") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService normalizes supported document main categories to stable buckets") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    struct TestCase {
+        const char* file_name;
+        const char* summary;
+        const char* response;
+        const char* expected_category;
+        const char* expected_subcategory;
+    };
+
+    const std::vector<TestCase> cases = {
+        {"pci_dss_quick_reference.pdf",
+         "Quick reference to PCI DSS controls and security requirements.",
+         "Computing : Security Compliance",
+         "Documents",
+         "Security Compliance"},
+        {"product_launch_deck.pptx",
+         "Presentation slides for a new product launch.",
+         "Marketing : Product Launch",
+         "Presentations",
+         "Product Launch"},
+        {"quarterly_budget.xlsx",
+         "Workbook with quarterly budget totals by department.",
+         "Finance : Quarterly Budgets",
+         "Spreadsheets",
+         "Quarterly Budgets"},
+        {"sales_export.csv",
+         "CSV export of sales metrics by region.",
+         "Analytics : Regional Metrics",
+         "Data Exports",
+         "Regional Metrics"},
+        {"desktop_preferences.conf",
+         "Configuration file for desktop preferences.",
+         "System : Desktop Preferences",
+         "Configs",
+         "Desktop Preferences"},
+        {"file-sample_100kB.doc",
+         nullptr,
+         "Office Software : Meeting Minutes",
+         "Documents",
+         "Meeting Minutes"},
+        {"quarterly_budget_legacy.xls",
+         nullptr,
+         "Finance : Department Budget",
+         "Spreadsheets",
+         "Department Budget"},
+        {"sales_kickoff_legacy.ppt",
+         nullptr,
+         "Marketing : Sales Kickoff",
+         "Presentations",
+         "Sales Kickoff"}
+    };
+
+    for (const auto& test_case : cases) {
+        TempDir data_dir;
+        const std::string full_path = (data_dir.path() / test_case.file_name).string();
+        const std::string prompt_path = test_case.summary
+            ? MainAppTestAccess::build_document_prompt_path(
+                  full_path,
+                  test_case.file_name,
+                  test_case.summary)
+            : full_path;
+        const std::vector<FileEntry> files = {FileEntry{full_path, test_case.file_name, FileType::File}};
+
+        std::atomic<bool> stop_flag{false};
+        auto calls = std::make_shared<int>(0);
+        auto factory = [calls, &test_case]() {
+            return std::make_unique<FixedResponseLLM>(calls, test_case.response);
+        };
+
+        const auto categorized = service.categorize_entries(
+            files,
+            true,
+            stop_flag,
+            {},
+            {},
+            {},
+            {},
+            factory,
+            [&test_case, &prompt_path](const FileEntry&) {
+                return CategorizationService::PromptOverride{test_case.file_name, prompt_path};
+            });
+
+        CAPTURE(test_case.file_name);
+        REQUIRE(categorized.size() == 1);
+        CHECK(categorized.front().canonical_category == test_case.expected_category);
+        CHECK(categorized.front().canonical_subcategory == test_case.expected_subcategory);
+    }
+}
+
+TEST_CASE("CategorizationService preserves explicit whitelist document main categories") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    settings.set_use_whitelist(true);
+    settings.set_allowed_categories({"Contracts", "Policies"});
+    settings.set_allowed_subcategories({});
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    TempDir data_dir;
+    const std::string file_name = "vendor_agreement.pdf";
+    const std::string full_path = (data_dir.path() / file_name).string();
+    const std::string prompt_path = MainAppTestAccess::build_document_prompt_path(
+        full_path,
+        file_name,
+        "Vendor agreement covering support and maintenance obligations.");
+    const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
+
+    std::atomic<bool> stop_flag{false};
+    auto calls = std::make_shared<int>(0);
+    auto factory = [calls]() {
+        return std::make_unique<FixedResponseLLM>(calls, "Contracts : Vendor Services");
+    };
+
+    const auto categorized = service.categorize_entries(
+        files,
+        true,
+        stop_flag,
+        {},
+        {},
+        {},
+        {},
+        factory,
+        [file_name, prompt_path](const FileEntry&) {
+            return CategorizationService::PromptOverride{file_name, prompt_path};
+        });
+
+    REQUIRE(categorized.size() == 1);
+    CHECK(categorized.front().canonical_category == "Contracts");
+    CHECK(categorized.front().canonical_subcategory == "Vendor Services");
+}
+
+TEST_CASE("CategorizationService adds stable guidance for supported image prompts") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    const std::string prompt_name = "seal_photo.jpg";
+    const std::string prompt_path = (base_dir.path() / prompt_name).string();
+
+    const std::string context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        prompt_name,
+        prompt_path,
+        FileType::File);
+
+    CHECK(context.find("Image categorization guidance:") != std::string::npos);
+    CHECK(context.find("Always use Images as the main category") != std::string::npos);
+    CHECK(context.find("put the depicted subject, scene, or on-screen content in the subcategory") != std::string::npos);
+    CHECK(context.find("Allowed main categories") != std::string::npos);
+    CHECK(context.find("1) Images") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService narrows software-like prompts to software family candidates") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    const std::string prompt_name = "Git-2.50.0.2-64-bit.exe";
+    const std::string prompt_path = (base_dir.path() / prompt_name).string();
+
+    const std::string context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        prompt_name,
+        prompt_path,
+        FileType::File);
+
+    CHECK(context.find("Allowed main categories") != std::string::npos);
+    CHECK(context.find("1) Software") != std::string::npos);
+    CHECK(context.find("2) Installers") != std::string::npos);
+    CHECK(context.find("3) Drivers") != std::string::npos);
+    CHECK(context.find("4) Operating Systems") != std::string::npos);
+    CHECK(context.find("5) Other") != std::string::npos);
+    CHECK(context.find("Use Other only when none of the listed family categories clearly fits the file.") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService narrows archive prompts to archive family candidates") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    const std::string prompt_name = "sqlite-tools-win-x64-3500400.zip";
+    const std::string prompt_path = (base_dir.path() / prompt_name).string();
+
+    const std::string context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        prompt_name,
+        prompt_path,
+        FileType::File);
+
+    CHECK(context.find("Allowed main categories") != std::string::npos);
+    CHECK(context.find("1) Archives") != std::string::npos);
+    CHECK(context.find("2) Software") != std::string::npos);
+    CHECK(context.find("3) Data Exports") != std::string::npos);
+    CHECK(context.find("4) Other") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService normalizes software-like main categories to stable buckets") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    struct TestCase {
+        const char* file_name;
+        const char* response;
+        const char* expected_category;
+        const char* expected_subcategory;
+    };
+
+    const std::vector<TestCase> cases = {
+        {"Git-2.50.0.2-64-bit.exe",
+         "Version Control : Git",
+         "Software",
+         "Version Control"},
+        {"nsis-3.11-setup.exe",
+         "Installation Software : Setup Utility",
+         "Installers",
+         "Setup Utility"},
+        {"VMware-workstation-full-17.6.4-24832109.exe",
+         "Operating Systems : Virtualization Software",
+         "Software",
+         "Virtualization Software"},
+        {"581.57-desktop-win10-win11-64bit-international-nsd-dch-whql.exe",
+         "Operating System : Antivirus Software",
+         "Drivers",
+         "Antivirus Software"}
+    };
+
+    for (const auto& test_case : cases) {
+        TempDir data_dir;
+        const std::string full_path = (data_dir.path() / test_case.file_name).string();
+        const std::vector<FileEntry> files = {FileEntry{full_path, test_case.file_name, FileType::File}};
+
+        std::atomic<bool> stop_flag{false};
+        auto calls = std::make_shared<int>(0);
+        auto factory = [calls, &test_case]() {
+            return std::make_unique<FixedResponseLLM>(calls, test_case.response);
+        };
+
+        const auto categorized = service.categorize_entries(
+            files,
+            true,
+            stop_flag,
+            {},
+            {},
+            {},
+            {},
+            factory);
+
+        CAPTURE(test_case.file_name);
+        REQUIRE(categorized.size() == 1);
+        CHECK(categorized.front().canonical_category == test_case.expected_category);
+        CHECK(categorized.front().canonical_subcategory == test_case.expected_subcategory);
+    }
+}
+
+TEST_CASE("CategorizationService normalizes archive-like main categories to stable buckets") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    struct TestCase {
+        const char* file_name;
+        const char* response;
+        const char* expected_category;
+        const char* expected_subcategory;
+    };
+
+    const std::vector<TestCase> cases = {
+        {"sqlite-tools-win-x64-3500400.zip",
+         "Database Management Tools : Database Management Systems",
+         "Software",
+         "Database Management Tools"},
+        {"ProcessMonitor.zip",
+         "System Utilities : Process Monitoring",
+         "Software",
+         "System Utilities"},
+        {"sales_export_bundle.zip",
+         "Analytics : Regional Metrics",
+         "Data Exports",
+         "Analytics"},
+        {"cad_assets_bundle.zip",
+         "Archives : CAD assets",
+         "Archives",
+         "CAD assets"}
+    };
+
+    for (const auto& test_case : cases) {
+        TempDir data_dir;
+        const std::string full_path = (data_dir.path() / test_case.file_name).string();
+        const std::vector<FileEntry> files = {FileEntry{full_path, test_case.file_name, FileType::File}};
+
+        std::atomic<bool> stop_flag{false};
+        auto calls = std::make_shared<int>(0);
+        auto factory = [calls, &test_case]() {
+            return std::make_unique<FixedResponseLLM>(calls, test_case.response);
+        };
+
+        const auto categorized = service.categorize_entries(
+            files,
+            true,
+            stop_flag,
+            {},
+            {},
+            {},
+            {},
+            factory);
+
+        CAPTURE(test_case.file_name);
+        REQUIRE(categorized.size() == 1);
+        CHECK(categorized.front().canonical_category == test_case.expected_category);
+        CHECK(categorized.front().canonical_subcategory == test_case.expected_subcategory);
+    }
+}
+
+TEST_CASE("CategorizationService preserves explicit whitelist software-like main categories") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    settings.set_use_whitelist(true);
+    settings.set_allowed_categories({"Utilities", "Drivers"});
+    settings.set_allowed_subcategories({});
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    TempDir data_dir;
+    const std::string file_name = "ProcessMonitor.zip";
+    const std::string full_path = (data_dir.path() / file_name).string();
+    const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
+
+    std::atomic<bool> stop_flag{false};
+    auto calls = std::make_shared<int>(0);
+    auto factory = [calls]() {
+        return std::make_unique<FixedResponseLLM>(calls, "Utilities : Process Monitoring");
+    };
+
+    const auto categorized = service.categorize_entries(
+        files,
+        true,
+        stop_flag,
+        {},
+        {},
+        {},
+        {},
+        factory);
+
+    REQUIRE(categorized.size() == 1);
+    CHECK(categorized.front().canonical_category == "Utilities");
+    CHECK(categorized.front().canonical_subcategory == "Process Monitoring");
+}
+
+TEST_CASE("CategorizationService uses a broader fallback candidate list for unknown file types") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    const std::string prompt_name = "mystery.asset";
+    const std::string prompt_path = (base_dir.path() / prompt_name).string();
+
+    const std::string context = CategorizationServiceTestAccess::build_combined_context(
+        service,
+        {},
+        prompt_name,
+        prompt_path,
+        FileType::File);
+
+    CHECK(context.find("Allowed main categories") != std::string::npos);
+    CHECK(context.find("Documents") != std::string::npos);
+    CHECK(context.find("Images") != std::string::npos);
+    CHECK(context.find("Software") != std::string::npos);
+    CHECK(context.find("Archives") != std::string::npos);
+    CHECK(context.find("Other") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService uses separate main-category and subcategory prompts for document files") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    TempDir data_dir;
+    const std::string file_name = "pci_dss_quick_reference.pdf";
+    const std::string full_path = (data_dir.path() / file_name).string();
+    const std::string prompt_path = MainAppTestAccess::build_document_prompt_path(
+        full_path,
+        file_name,
+        "Quick reference to PCI DSS controls for merchants and service providers.");
+    const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
+
+    std::atomic<bool> stop_flag{false};
+    auto calls = std::make_shared<int>(0);
+    auto prompts = std::make_shared<std::vector<std::string>>();
+    auto factory = [calls, prompts]() {
+        return std::make_unique<SequencedCompletionLLM>(
+            calls,
+            prompts,
+            std::deque<std::string>{
+                "{\"main_category\":\"Documents\"}",
+                "{\"subcategory\":\"PCI DSS\"}"
+            });
+    };
+
+    const auto categorized = service.categorize_entries(files,
+                                                        true,
+                                                        stop_flag,
+                                                        {},
+                                                        {},
+                                                        {},
+                                                        {},
+                                                        factory,
+                                                        [file_name, prompt_path](const FileEntry&) {
+                                                            return CategorizationService::PromptOverride{file_name, prompt_path};
+                                                        });
+
+    REQUIRE(categorized.size() == 1);
+    CHECK(categorized.front().canonical_category == "Documents");
+    CHECK(categorized.front().canonical_subcategory == "PCI DSS");
+    CHECK(*calls == 2);
+    REQUIRE(prompts->size() == 2);
+    CHECK((*prompts)[0].find("{\"main_category\":\"...\"}") != std::string::npos);
+    CHECK((*prompts)[0].find("Allowed main categories:") != std::string::npos);
+    CHECK((*prompts)[0].find("Document summary: Quick reference to PCI DSS controls for merchants and service providers.") != std::string::npos);
+    CHECK((*prompts)[1].find("{\"subcategory\":\"...\"}") != std::string::npos);
+    CHECK((*prompts)[1].find("The main category is already fixed to: Documents") != std::string::npos);
+    CHECK((*prompts)[1].find("Document categorization guidance:") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService keeps the selected main category when the subcategory pass echoes another one") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    TempDir data_dir;
+    const std::string file_name = "Git-2.50.0.2-64-bit.exe";
+    const std::string full_path = (data_dir.path() / file_name).string();
+    const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
+
+    std::atomic<bool> stop_flag{false};
+    auto calls = std::make_shared<int>(0);
+    auto prompts = std::make_shared<std::vector<std::string>>();
+    auto factory = [calls, prompts]() {
+        return std::make_unique<SequencedCompletionLLM>(
+            calls,
+            prompts,
+            std::deque<std::string>{
+                "{\"main_category\":\"Software\"}",
+                "Operating Systems : Version Control"
+            });
+    };
+
+    const auto categorized = service.categorize_entries(files,
+                                                        true,
+                                                        stop_flag,
+                                                        {},
+                                                        {},
+                                                        {},
+                                                        {},
+                                                        factory);
+
+    REQUIRE(categorized.size() == 1);
+    CHECK(categorized.front().canonical_category == "Software");
+    CHECK(categorized.front().canonical_subcategory == "Version Control");
+    CHECK(*calls == 2);
+    REQUIRE(prompts->size() == 2);
+    CHECK((*prompts)[1].find("The main category is already fixed to: Software") != std::string::npos);
+}
+
+TEST_CASE("CategorizationService normalizes supported image main categories to Images") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    struct TestCase {
+        const char* file_name;
+        const char* description;
+        const char* response;
+        const char* expected_subcategory;
+    };
+
+    const std::vector<TestCase> cases = {
+        {"screensehot1.png",
+         "A screenshot of LLM mode options for a file sorter application.",
+         "LLM Mode Options : File Sorters",
+         "File Sorters"},
+        {"must-take-pictures-in-paris-facebook.jpg",
+         "A travel photo highlighting the Eiffel Tower and the Paris skyline.",
+         "Paris_Skyline : Eiffel_Tower",
+         "Eiffel_Tower"},
+        {"lion-805084_1920.jpg",
+         "A lion standing in tall grass on an African savanna.",
+         "African Fauna : Lions",
+         "Lions"},
+        {"image5.jpg",
+         nullptr,
+         "Grass : Flowers",
+         "Flowers"},
+        {"GettyImages-865719-001.jpg",
+         nullptr,
+         "Wildlife : Sea Lions",
+         "Sea Lions"}
+    };
+
+    for (const auto& test_case : cases) {
+        TempDir data_dir;
+        const std::string full_path = (data_dir.path() / test_case.file_name).string();
+        const std::string prompt_path = test_case.description
+            ? MainAppTestAccess::build_image_prompt_path(
+                  full_path,
+                  test_case.file_name,
+                  test_case.description)
+            : full_path;
+        const std::vector<FileEntry> files = {FileEntry{full_path, test_case.file_name, FileType::File}};
+
+        std::atomic<bool> stop_flag{false};
+        auto calls = std::make_shared<int>(0);
+        auto factory = [calls, &test_case]() {
+            return std::make_unique<FixedResponseLLM>(calls, test_case.response);
+        };
+
+        const auto categorized = service.categorize_entries(
+            files,
+            true,
+            stop_flag,
+            {},
+            {},
+            {},
+            {},
+            factory,
+            [&test_case, &prompt_path](const FileEntry&) {
+                return CategorizationService::PromptOverride{test_case.file_name, prompt_path};
+            });
+
+        CAPTURE(test_case.file_name);
+        REQUIRE(categorized.size() == 1);
+        CHECK(categorized.front().canonical_category == "Images");
+        CHECK(categorized.front().canonical_subcategory == test_case.expected_subcategory);
+    }
+}
+
+TEST_CASE("CategorizationService preserves explicit whitelist image main categories when Images is disallowed") {
+    TempDir base_dir;
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
+    Settings settings;
+    settings.set_use_whitelist(true);
+    settings.set_allowed_categories({"Animals", "Travel"});
+    settings.set_allowed_subcategories({});
+    DatabaseManager db(settings.get_config_dir());
+    CategorizationService service(settings, db, nullptr);
+
+    TempDir data_dir;
+    const std::string file_name = "cat_photo.jpg";
+    const std::string full_path = (data_dir.path() / file_name).string();
+    const std::string prompt_path = MainAppTestAccess::build_image_prompt_path(
+        full_path,
+        file_name,
+        "A grey cat sleeping on a sofa.");
+    const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
+
+    std::atomic<bool> stop_flag{false};
+    auto calls = std::make_shared<int>(0);
+    auto factory = [calls]() {
+        return std::make_unique<FixedResponseLLM>(calls, "Animals : Cats");
+    };
+
+    const auto categorized = service.categorize_entries(
+        files,
+        true,
+        stop_flag,
+        {},
+        {},
+        {},
+        {},
+        factory,
+        [file_name, prompt_path](const FileEntry&) {
+            return CategorizationService::PromptOverride{file_name, prompt_path};
+        });
+
+    REQUIRE(categorized.size() == 1);
+    CHECK(categorized.front().canonical_category == "Animals");
+    CHECK(categorized.front().canonical_subcategory == "Cats");
+}
+
 TEST_CASE("CategorizationService adds subject-focused guidance for screenshot-like image prompts") {
     TempDir base_dir;
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", base_dir.path().string());
@@ -943,6 +1641,7 @@ TEST_CASE("CategorizationService adds subject-focused guidance for screenshot-li
         FileType::File);
 
     CHECK(context.find("Image categorization guidance:") != std::string::npos);
+    CHECK(context.find("Always use Images as the main category") != std::string::npos);
     CHECK(context.find("Categorize the subject matter shown in the image") != std::string::npos);
     CHECK(context.find("Do not classify a PNG/JPG/WebP screenshot as Software") != std::string::npos);
     CHECK(context.find("prefer labels that describe what is on screen") != std::string::npos);
@@ -1013,7 +1712,7 @@ TEST_CASE("CategorizationService stores canonical English labels and persists tr
     CategorizationService service(settings, db, nullptr);
 
     TempDir data_dir;
-    const std::string file_name = "utility_tool.exe";
+    const std::string file_name = "Git-2.50.0.2-64-bit.exe";
     const std::string full_path = (data_dir.path() / file_name).string();
     const std::vector<FileEntry> files = {FileEntry{full_path, file_name, FileType::File}};
 
@@ -1024,9 +1723,9 @@ TEST_CASE("CategorizationService stores canonical English labels and persists tr
         return std::make_unique<TranslationAwareLLM>(
             categorize_calls,
             translation_calls,
-            "Software : Utilities",
+            "Software : Version Control",
             std::deque<std::string>{
-                "{\"category\":\"Logiciels\",\"subcategory\":\"Utilitaires\"}"
+                "{\"category\":\"Logiciels\",\"subcategory\":\"Controle de version\"}"
             });
     };
 
@@ -1041,33 +1740,33 @@ TEST_CASE("CategorizationService stores canonical English labels and persists tr
 
     REQUIRE(categorized.size() == 1);
     CHECK(categorized.front().category == "Logiciels");
-    CHECK(categorized.front().subcategory == "Utilitaires");
+    CHECK(categorized.front().subcategory == "Controle de version");
     CHECK(categorized.front().canonical_category == "Software");
-    CHECK(categorized.front().canonical_subcategory == "Utilities");
-    CHECK(*categorize_calls == 1);
+    CHECK(categorized.front().canonical_subcategory == "Version Control");
+    CHECK(*categorize_calls == 2);
     CHECK(*translation_calls == 1);
 
     const auto cached = db.get_categorization_from_db(data_dir.path().string(), file_name, FileType::File);
     REQUIRE(cached.size() == 2);
     CHECK(cached[0] == "Software");
-    CHECK(cached[1] == "Utilities");
+    CHECK(cached[1] == "Version Control");
 
     const auto translated = db.get_category_translation(categorized.front().taxonomy_id, CategoryLanguage::French);
     REQUIRE(translated.has_value());
     CHECK(translated->category == "Logiciels");
-    CHECK(translated->subcategory == "Utilitaires");
+    CHECK(translated->subcategory == "Controle de version");
 
-    const auto resolved_french = db.resolve_category_for_language("Logiciels", "Utilitaires", CategoryLanguage::French);
+    const auto resolved_french = db.resolve_category_for_language("Logiciels", "Controle de version", CategoryLanguage::French);
     CHECK(resolved_french.taxonomy_id == categorized.front().taxonomy_id);
     CHECK(resolved_french.category == "Software");
-    CHECK(resolved_french.subcategory == "Utilities");
+    CHECK(resolved_french.subcategory == "Version Control");
 
     const auto cached_entries = service.load_cached_entries(data_dir.path().string());
     REQUIRE(cached_entries.size() == 1);
     CHECK(cached_entries.front().category == "Logiciels");
-    CHECK(cached_entries.front().subcategory == "Utilitaires");
+    CHECK(cached_entries.front().subcategory == "Controle de version");
     CHECK(cached_entries.front().canonical_category == "Software");
-    CHECK(cached_entries.front().canonical_subcategory == "Utilities");
+    CHECK(cached_entries.front().canonical_subcategory == "Version Control");
 }
 
 TEST_CASE("CategorizationService strips inline subcategory label artifacts when parsing service output") {

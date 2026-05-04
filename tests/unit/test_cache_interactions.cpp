@@ -152,7 +152,8 @@ public:
     }
 
     std::string complete_prompt(const std::string&, int) override {
-        return std::string();
+        ++(*calls_);
+        return response_;
     }
 
     void set_prompt_logging_enabled(bool) override {
@@ -232,7 +233,7 @@ TEST_CASE("CategorizationService falls back to LLM when cache is empty") {
 
     TempDir data_dir;
     const std::string dir_path = data_dir.path().string();
-    const std::string file_name = "uncached.txt";
+    const std::string file_name = "uncached.pdf";
     DatabaseManager::ResolvedCategory empty{0, "", ""};
     REQUIRE(db.insert_or_update_file_with_categorization(
         file_name, "F", dir_path, empty, false, std::string(), false));
@@ -241,7 +242,7 @@ TEST_CASE("CategorizationService falls back to LLM when cache is empty") {
     std::atomic<bool> stop_flag{false};
     auto calls = std::make_shared<int>(0);
     auto factory = [calls]() {
-        return std::make_unique<CountingLLM>(calls, "Images : Photos");
+        return std::make_unique<CountingLLM>(calls, "Documents : Reports");
     };
 
     const auto full_path = (data_dir.path() / file_name).string();
@@ -258,14 +259,14 @@ TEST_CASE("CategorizationService falls back to LLM when cache is empty") {
         factory);
 
     REQUIRE(categorized.size() == 1);
-    CHECK(categorized.front().category == "Images");
-    CHECK(categorized.front().subcategory == "Photos");
-    CHECK(*calls == 1);
+    CHECK(categorized.front().category == "Documents");
+    CHECK(categorized.front().subcategory == "Reports");
+    CHECK(*calls == 2);
 
     const auto cached = db.get_categorization_from_db(dir_path, file_name, FileType::File);
     REQUIRE(cached.size() == 2);
-    CHECK(cached[0] == "Images");
-    CHECK(cached[1] == "Photos");
+    CHECK(cached[0] == "Documents");
+    CHECK(cached[1] == "Reports");
 }
 
 TEST_CASE("CategorizationService invokes completion callback per entry") {
@@ -304,7 +305,7 @@ TEST_CASE("CategorizationService invokes completion callback per entry") {
     REQUIRE(categorized.size() == files.size());
     CHECK(queued_count == files.size());
     CHECK(completed_count == files.size());
-    CHECK(*calls == static_cast<int>(files.size()));
+    CHECK(*calls == static_cast<int>(files.size() * 2));
 }
 
 TEST_CASE("CategorizationService loads cached entries recursively for analysis") {

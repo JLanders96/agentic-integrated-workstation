@@ -1,4 +1,5 @@
 #include "LocalLLMClient.hpp"
+#include "DocumentCategoryPolicy.hpp"
 #include "Logger.hpp"
 #include "Utils.hpp"
 #include "TestHooks.hpp"
@@ -689,9 +690,9 @@ std::pair<std::string, std::string> split_prompt_payload(std::string_view payloa
     return {std::move(base), std::move(content)};
 }
 
-std::string strip_image_guidance_block(std::string context) {
-    constexpr std::string_view kImageGuidanceHeader = "Image categorization guidance:\n";
-    const auto header_pos = context.find(kImageGuidanceHeader);
+std::string strip_guidance_block(std::string context,
+                                 std::string_view header) {
+    const auto header_pos = context.find(header);
     if (header_pos == std::string::npos) {
         return trim_copy(std::move(context));
     }
@@ -701,7 +702,7 @@ std::string strip_image_guidance_block(std::string context) {
         erase_begin -= 2;
     }
 
-    std::size_t erase_end = context.find("\n\n", header_pos + kImageGuidanceHeader.size());
+    std::size_t erase_end = context.find("\n\n", header_pos + header.size());
     if (erase_end == std::string::npos) {
         erase_end = context.size();
     }
@@ -710,40 +711,64 @@ std::string strip_image_guidance_block(std::string context) {
     return trim_copy(std::move(context));
 }
 
+std::string strip_image_guidance_block(std::string context) {
+    constexpr std::string_view kImageGuidanceHeader = "Image categorization guidance:\n";
+    return strip_guidance_block(std::move(context), kImageGuidanceHeader);
+}
+
+std::string extract_prompt_file_name(std::string_view payload)
+{
+    const auto newline = payload.find('\n');
+    const std::string first_line = trim_copy(std::string(payload.substr(0, newline)));
+    const auto slash = first_line.find_last_of("/\\");
+    if (slash == std::string::npos || slash + 1 >= first_line.size()) {
+        return first_line;
+    }
+    return first_line.substr(slash + 1);
+}
+
 std::string generic_file_categorization_system_prompt() {
     return "You are a file categorization assistant. If the file is an installer, "
            "determine the type of software it installs. Base your answer on the "
-           "filename, extension, and any directory context provided. Reply with "
-           "exactly one line in the format <Main category> : <Subcategory>. Main "
-           "category must be broad (one or two words, plural). Subcategory must be "
-           "specific, relevant, and must not repeat the main category. Do not "
-           "explain your answer, add extra lines, or use label words like "
-           "'Category' or 'Subcategory'. If uncertain, make your best guess from "
-           "the name only.";
+           "filename, extension, and any directory context provided. If the prompt "
+           "includes an 'Allowed main categories' list, choose the main category "
+           "from that list only. Use Other only when it is listed and none of the "
+           "other listed main categories clearly fits. Reply with exactly one line "
+           "in the format <Main category> : <Subcategory>. Main category must be "
+           "broad (one or two words, plural). Subcategory must be specific, "
+           "relevant, and must not repeat the main category. Do not explain your "
+           "answer, add extra lines, or use label words like 'Category' or "
+           "'Subcategory'. If uncertain, make your best guess from the name only.";
 }
 
 std::string document_categorization_system_prompt() {
     return "You are a document categorization assistant. Categorize the document by "
-           "its subject matter and content, not merely by its file extension or the "
-           "application that may have created it. Use any provided document summary "
-           "as the primary evidence, and use the filename, extension, and directory "
-           "context only as supporting clues. Reply with exactly one line in the "
-           "format <Main category> : <Subcategory>. Main category must be broad "
-           "(one or two words, plural). Subcategory must be specific, relevant, and "
-           "must not repeat the main category. Do not explain your answer, add "
-           "extra lines, or use label words like 'Category' or 'Subcategory'.";
+           "its subject matter and content for filesystem organization, not merely "
+           "by its file extension or the application that may have created it. Use "
+           "any provided document summary as the primary evidence when available, "
+           "and use the filename, extension, and directory context only as "
+           "supporting clues. If the prompt includes an 'Allowed main categories' "
+           "list, choose the main category from that list only. Otherwise keep the "
+           "main category broad and filesystem-friendly, and use the subcategory "
+           "for the specific topic. Reply with exactly one line in the format "
+           "<Main category> : <Subcategory>. Main category must be broad (one or "
+           "two words, plural). Subcategory must be specific, relevant, and must "
+           "not repeat the main category. Do not explain your answer, add extra "
+           "lines, or use label words like 'Category' or 'Subcategory'.";
 }
 
 std::string image_categorization_system_prompt() {
-    return "You categorize image files for filesystem organization. Because the "
-           "input is an image file, always use Images as the main category. The "
-           "subcategory should describe what the image shows in concise plural form "
-           "when possible. For screenshots and UI captures, classify the on-screen "
-           "content as an image subtype such as Dashboards, Forms, Product Pages, "
-           "Interfaces, File Managers, Admin Panels, Charts, or similar. Do not use "
-           "Software, Operating Systems, Databases, Installers, Technology, or "
-           "similar domain categories as the main category for ordinary image files. "
-           "Use any provided image description as the primary evidence, and use the "
+    return "You categorize image files for filesystem organization. If the prompt "
+           "includes an 'Allowed main categories' list, choose the main category "
+           "from that list only. Otherwise, because the input is an image file, "
+           "always use Images as the main category. The subcategory should "
+           "describe what the image shows in concise plural form when possible. For "
+           "screenshots and UI captures, classify the on-screen content as an image "
+           "subtype such as Dashboards, Forms, Product Pages, Interfaces, File "
+           "Managers, Admin Panels, Charts, or similar. Do not use Software, "
+           "Operating Systems, Databases, Installers, Technology, or similar domain "
+           "categories as the main category for ordinary image files. Use any "
+           "provided image description as the primary evidence, and use the "
            "filename, extension, and directory context only as supporting clues. "
            "Reply with exactly one line in the format Images : <Subcategory>. The "
            "subcategory must be specific, relevant, concise, and must not repeat "
@@ -753,12 +778,13 @@ std::string image_categorization_system_prompt() {
 
 std::string directory_categorization_system_prompt() {
     return "You are a directory categorization assistant. Categorize the directory "
-           "by the overall theme suggested by its name and path context. Reply with "
-           "exactly one line in the format <Main category> : <Subcategory>. Main "
-           "category must be broad (one or two words, plural). Subcategory must be "
-           "specific, relevant, and must not repeat the main category. Do not "
-           "explain your answer, add extra lines, or use label words like "
-           "'Category' or 'Subcategory'.";
+           "by the overall theme suggested by its name and path context. If the "
+           "prompt includes an 'Allowed main categories' list, choose the main "
+           "category from that list only. Reply with exactly one line in the format "
+           "<Main category> : <Subcategory>. Main category must be broad (one or "
+           "two words, plural). Subcategory must be specific, relevant, and must "
+           "not repeat the main category. Do not explain your answer, add extra "
+           "lines, or use label words like 'Category' or 'Subcategory'.";
 }
 
 std::string categorization_system_prompt(std::string_view file_path, FileType file_type) {
@@ -768,7 +794,7 @@ std::string categorization_system_prompt(std::string_view file_path, FileType fi
     if (has_marker(file_path, kImageDescriptionMarker)) {
         return image_categorization_system_prompt();
     }
-    if (has_marker(file_path, kDocumentSummaryMarker)) {
+    if (DocumentCategoryPolicy::is_supported_document_file_name(extract_prompt_file_name(file_path))) {
         return document_categorization_system_prompt();
     }
     return generic_file_categorization_system_prompt();
@@ -790,6 +816,7 @@ std::string build_generic_categorization_user_prompt(const std::string& file_nam
         prompt << "\n" << consistency_context << "\n";
     }
 
+    prompt << "\nAnswer with exactly one line:\n<Main category> : <Subcategory>";
     return prompt.str();
 }
 
@@ -815,12 +842,37 @@ std::string build_image_categorization_user_prompt(const std::string& file_name,
     return prompt.str();
 }
 
+std::string build_document_categorization_user_prompt(const std::string& file_name,
+                                                      const std::string& file_path,
+                                                      const std::string& consistency_context) {
+    const auto [base_path, document_summary] = split_prompt_payload(file_path, kDocumentSummaryMarker);
+
+    std::ostringstream prompt;
+    prompt << "Categorize this document file for file organization.\n\n";
+    prompt << "File name: " << file_name << "\n";
+    if (!base_path.empty()) {
+        prompt << "Path: " << base_path << "\n";
+    }
+    if (!document_summary.empty()) {
+        prompt << "Document summary: " << document_summary << "\n";
+    }
+    if (!consistency_context.empty()) {
+        prompt << "\n" << consistency_context << "\n";
+    }
+    prompt << "\nAnswer with exactly one line:\n<Main category> : <Subcategory>";
+    return prompt.str();
+}
+
 std::string categorization_user_prompt(const std::string& file_name,
                                        const std::string& file_path,
                                        FileType file_type,
                                        const std::string& consistency_context) {
     if (file_type == FileType::File && has_marker(file_path, kImageDescriptionMarker)) {
         return build_image_categorization_user_prompt(file_name, file_path, consistency_context);
+    }
+    if (file_type == FileType::File &&
+        DocumentCategoryPolicy::is_supported_document_file_name(file_name)) {
+        return build_document_categorization_user_prompt(file_name, file_path, consistency_context);
     }
     return build_generic_categorization_user_prompt(file_name,
                                                     file_path,
@@ -2830,7 +2882,15 @@ std::string LocalLLMClient::complete_prompt(const std::string& prompt,
                                             int max_tokens)
 {
     const int capped = max_tokens > 0 ? max_tokens : 256;
-    return generate_response(prompt, capped, false);
+    if (prompt_logging_enabled) {
+        std::cout << "\n[DEV][PROMPT] Completion request\n"
+                  << "[user]\n" << prompt << "\n";
+    }
+    const std::string response = generate_response(prompt, capped, false);
+    if (prompt_logging_enabled) {
+        std::cout << "[DEV][RESPONSE] Completion reply\n" << response << "\n";
+    }
+    return response;
 }
 
 
