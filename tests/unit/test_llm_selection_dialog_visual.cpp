@@ -36,6 +36,16 @@ void write_bytes(const std::filesystem::path& path, std::size_t count)
     }
 }
 
+void write_gguf_file(const std::filesystem::path& path, std::size_t size = 16)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write("GGUF", 4);
+    for (std::size_t i = 4; i < size; ++i) {
+        out.put('\0');
+    }
+}
+
 void write_download_metadata(const std::filesystem::path& artifact_path, const std::string& url)
 {
     std::ofstream meta(artifact_path.string() + ".aifs.meta", std::ios::trunc);
@@ -91,7 +101,7 @@ TEST_CASE("Visual model entry shows resume state for partial downloads") {
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
 
     const std::filesystem::path source_file = temp.path() / "llava-model.gguf";
-    write_bytes(source_file, 16);
+    write_gguf_file(source_file, 16);
     const std::string model_url = file_url_for(source_file);
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
@@ -128,7 +138,7 @@ TEST_CASE("Visual model entry reports download errors") {
     EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
 
     const std::filesystem::path source_file = temp.path() / "llava-model.gguf";
-    write_bytes(source_file, 16);
+    write_gguf_file(source_file, 16);
     const std::string model_url = file_url_for(source_file);
 
     EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", model_url);
@@ -231,14 +241,14 @@ TEST_CASE("Visual dialog does not mark another backend's legacy generic mmproj a
 
     const auto legacy_mmproj_path =
         std::filesystem::path(Utils::make_default_path_to_file_from_download_url(llava_mmproj_url));
-    write_bytes(legacy_mmproj_path, 16);
+    write_gguf_file(legacy_mmproj_path, 16);
     write_download_metadata(legacy_mmproj_path, llava_mmproj_url);
 
     const auto* gemma_descriptor = find_visual_model_descriptor("gemma-3-4b-it");
     REQUIRE(gemma_descriptor != nullptr);
     const auto gemma_model_path =
         visual_artifact_storage_path(*gemma_descriptor, gemma_descriptor->artifacts[0]);
-    write_bytes(gemma_model_path, 16);
+    write_gguf_file(gemma_model_path, 16);
 
     Settings settings;
     settings.set_visual_model_id("gemma-3-4b-it");
@@ -269,7 +279,7 @@ TEST_CASE("Visual dialog accepts the legacy LLaVA generic mmproj without metadat
 
     const auto legacy_mmproj_path =
         std::filesystem::path(Utils::make_default_path_to_file_from_download_url(mmproj_url));
-    write_bytes(legacy_mmproj_path, 16);
+    write_gguf_file(legacy_mmproj_path, 16);
 
     Settings settings;
     settings.set_visual_model_id("llava-v1.6-mistral-7b");
@@ -280,5 +290,39 @@ TEST_CASE("Visual dialog accepts the legacy LLaVA generic mmproj without metadat
         LLMSelectionDialogTestAccess::visual_entry_for_env_var(dialog, "LLAVA_MMPROJ_URL");
     REQUIRE(llava_mmproj_entry.status_label != nullptr);
     CHECK(llava_mmproj_entry.status_label->text() == QStringLiteral("Model ready."));
+}
+
+TEST_CASE("Visual dialog does not mark invalid preferred artifacts as ready") {
+    EnvVarGuard platform_guard("QT_QPA_PLATFORM", std::string("offscreen"));
+    QtAppContext qt_context;
+
+    TempDir temp;
+    EnvVarGuard home_guard("HOME", temp.path().string());
+    EnvVarGuard config_guard("AI_FILE_SORTER_CONFIG_DIR", temp.path().string());
+
+    const std::string model_url = "https://gemma.example/models/gemma-3-4b-it-Q4_K_M.gguf";
+    const std::string mmproj_url = "https://gemma.example/models/mmproj-gemma-3-4b-it-Q4_K_M.gguf";
+
+    EnvVarGuard llava_model_guard("LLAVA_MODEL_URL", std::nullopt);
+    EnvVarGuard llava_mmproj_guard("LLAVA_MMPROJ_URL", std::nullopt);
+    EnvVarGuard gemma_model_guard("GEMMA3_4B_MODEL_URL", model_url);
+    EnvVarGuard gemma_mmproj_guard("GEMMA3_4B_MMPROJ_URL", mmproj_url);
+
+    const auto* gemma_descriptor = find_visual_model_descriptor("gemma-3-4b-it");
+    REQUIRE(gemma_descriptor != nullptr);
+    write_gguf_file(visual_artifact_storage_path(*gemma_descriptor, gemma_descriptor->artifacts[1]), 16);
+    const auto gemma_model_path =
+        visual_artifact_storage_path(*gemma_descriptor, gemma_descriptor->artifacts[0]);
+    write_bytes(gemma_model_path, 16);
+
+    Settings settings;
+    settings.set_visual_model_id("gemma-3-4b-it");
+    LLMSelectionDialog dialog(settings);
+
+    const auto gemma_model_entry =
+        LLMSelectionDialogTestAccess::visual_entry_for_env_var(dialog, "GEMMA3_4B_MODEL_URL");
+    REQUIRE(gemma_model_entry.status_label != nullptr);
+    CHECK(gemma_model_entry.status_label->text()
+          == QStringLiteral("Downloaded file is invalid or incomplete. Delete it and download again."));
 }
 #endif

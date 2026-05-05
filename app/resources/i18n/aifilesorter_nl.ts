@@ -354,6 +354,10 @@
         <translation>Voltooid</translation>
     </message>
     <message>
+        <source>Skipped</source>
+        <translation>Overgeslagen</translation>
+    </message>
+    <message>
         <location filename="../../lib/CategorizationProgressDialog.cpp" line="661"/>
         <source>Processed 0/0  |  In progress: 0  |  Pending: 0</source>
         <translation>Verwerkt 0/0  |  Bezig: 0  |  In afwachting: 0</translation>
@@ -736,6 +740,12 @@ Ondersteunt: Nvidia (CUDA), Apple (Metal), CPU.</translation>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1575"/>
         <source>Partial download detected. You can resume.</source>
         <translation>Gedeeltelijke download gedetecteerd. U kunt hervatten.</translation>
+    </message>
+    <message>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1006"/>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1586"/>
+        <source>Downloaded file is invalid or incomplete. Delete it and download again.</source>
+        <translation type="unfinished">Downloaded file is invalid or incomplete. Delete it and download again.</translation>
     </message>
     <message>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1012"/>
@@ -1192,6 +1202,22 @@ Open deze link handmatig:
         <location filename="../../lib/MainApp.cpp" line="2100"/>
         <source>[WARN] GPU fallback to CPU declined. Cancelling analysis.</source>
         <translation>[WARN] Terugval van GPU naar CPU geweigerd. Analyse wordt geannuleerd.</translation>
+    </message>
+    <message>
+        <source>Continue without visual analysis?</source>
+        <translation>Doorgaan zonder beeldanalyse?</translation>
+    </message>
+    <message>
+        <source>Image analysis is unavailable.</source>
+        <translation>Beeldanalyse is niet beschikbaar.</translation>
+    </message>
+    <message>
+        <source>Continue this analysis using filenames only? Cancel will stop this analysis.</source>
+        <translation>Deze analyse alleen met bestandsnamen voortzetten? Annuleren stopt deze analyse.</translation>
+    </message>
+    <message>
+        <source>[WARN] Continue without visual analysis declined. Cancelling analysis.</source>
+        <translation>[WAARSCHUWING] Doorgaan zonder beeldanalyse geweigerd. Analyse wordt geannuleerd.</translation>
     </message>
     <message>
         <location filename="../../lib/MainApp.cpp" line="2270"/>

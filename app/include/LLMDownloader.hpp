@@ -1,10 +1,12 @@
 #pragma once
 #include "Settings.hpp"
 #include <atomic>
+#include <filesystem>
 #include <curl/system.h>
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <curl/curl.h>
@@ -98,7 +100,8 @@ public:
     enum class DownloadStatus {
         NotStarted,
         InProgress,
-        Complete
+        Complete,
+        Corrupt
     };
     
     /**
@@ -118,6 +121,7 @@ public:
     /**
      * @brief Updates the download URL (resets internal state).
      * @param new_url New URL to download from.
+     * @throws std::logic_error When a download is currently active.
      */
     void set_download_url(const std::string& new_url);
     /**
@@ -294,6 +298,13 @@ private:
      */
     bool server_supports_resume_locked() const;
     /**
+     * @brief Validate a completed download artifact before exposing it as ready.
+     * @param candidate Completed file path to inspect.
+     * @return Empty optional when valid, otherwise a descriptive validation error.
+     */
+    std::optional<std::string> validate_completed_artifact(
+        const std::filesystem::path& candidate) const;
+    /**
      * @brief Validates a content-length header value.
      * @param value Header string.
      * @return True when the value is a valid content length.
@@ -301,5 +312,6 @@ private:
     bool has_valid_content_length(const std::string& value) const;
 
     std::atomic<bool> cancel_requested{false};
+    std::atomic<bool> download_active{false};
     long resume_offset = 0;
 };

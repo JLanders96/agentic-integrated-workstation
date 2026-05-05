@@ -354,6 +354,10 @@
         <translation>Terminé</translation>
     </message>
     <message>
+        <source>Skipped</source>
+        <translation>Ignoré</translation>
+    </message>
+    <message>
         <location filename="../../lib/CategorizationProgressDialog.cpp" line="661"/>
         <source>Processed 0/0  |  In progress: 0  |  Pending: 0</source>
         <translation>Traités 0/0  |  En cours : 0  |  En attente : 0</translation>
@@ -736,6 +740,12 @@ Prend en charge : Nvidia (CUDA), Apple (Metal), CPU.</translation>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1575"/>
         <source>Partial download detected. You can resume.</source>
         <translation>Téléchargement partiel détecté. Vous pouvez reprendre.</translation>
+    </message>
+    <message>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1006"/>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1586"/>
+        <source>Downloaded file is invalid or incomplete. Delete it and download again.</source>
+        <translation type="unfinished">Downloaded file is invalid or incomplete. Delete it and download again.</translation>
     </message>
     <message>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1012"/>
@@ -1192,6 +1202,22 @@ Veuillez ouvrir ce lien manuellement :
         <location filename="../../lib/MainApp.cpp" line="2100"/>
         <source>[WARN] GPU fallback to CPU declined. Cancelling analysis.</source>
         <translation>[WARN] Repli du GPU vers le CPU refusé. Annulation de l&apos;analyse.</translation>
+    </message>
+    <message>
+        <source>Continue without visual analysis?</source>
+        <translation>Continuer sans analyse d&apos;image ?</translation>
+    </message>
+    <message>
+        <source>Image analysis is unavailable.</source>
+        <translation>L&apos;analyse d&apos;image n&apos;est pas disponible.</translation>
+    </message>
+    <message>
+        <source>Continue this analysis using filenames only? Cancel will stop this analysis.</source>
+        <translation>Continuer cette analyse en utilisant uniquement les noms de fichiers ? Annuler arrêtera cette analyse.</translation>
+    </message>
+    <message>
+        <source>[WARN] Continue without visual analysis declined. Cancelling analysis.</source>
+        <translation>[AVERTISSEMENT] Continuer sans analyse d&apos;image refusé. Annulation de l&apos;analyse.</translation>
     </message>
     <message>
         <location filename="../../lib/MainApp.cpp" line="2270"/>

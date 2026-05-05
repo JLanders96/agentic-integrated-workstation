@@ -950,11 +950,26 @@ bool LLMSelectionDialog::gemini_inputs_valid() const
     return !key_text.isEmpty() && !model_text.isEmpty();
 }
 
+void LLMSelectionDialog::update_local_download_choice_enabled_state()
+{
+    const bool allow_switch = !is_downloading.load();
+    if (local3_radio) {
+        local3_radio->setEnabled(allow_switch || local3_radio->isChecked());
+    }
+    if (local3_legacy_radio) {
+        local3_legacy_radio->setEnabled(allow_switch || local3_legacy_radio->isChecked());
+    }
+    if (local7_radio) {
+        local7_radio->setEnabled(allow_switch || local7_radio->isChecked());
+    }
+}
+
 void LLMSelectionDialog::update_local_choice_ui()
 {
     if (!ok_button && button_box) {
         ok_button = button_box->button(QDialogButtonBox::Ok);
     }
+    update_local_download_choice_enabled_state();
     refresh_downloader();
 
     if (!downloader) {
@@ -980,6 +995,21 @@ void LLMSelectionDialog::update_local_choice_ui()
             ok_button->setEnabled(true);
         }
         set_status_message(tr("Model ready."));
+        break;
+    case LLMDownloader::DownloadStatus::Corrupt:
+        progress_bar->setVisible(false);
+        progress_bar->setValue(0);
+        download_button->setVisible(true);
+        download_button->setEnabled(!is_downloading.load());
+        download_button->setText(tr("Download"));
+        if (delete_download_button) {
+            delete_download_button->setVisible(true);
+            delete_download_button->setEnabled(true);
+        }
+        if (ok_button) {
+            ok_button->setEnabled(false);
+        }
+        set_status_message(tr("Downloaded file is invalid or incomplete. Delete it and download again."));
         break;
     case LLMDownloader::DownloadStatus::InProgress:
         progress_bar->setVisible(true);
@@ -1033,7 +1063,10 @@ void LLMSelectionDialog::refresh_downloader()
 
     if (!downloader) {
         downloader = std::make_unique<LLMDownloader>(env_url);
-    } else {
+    } else if (downloader->get_download_url() != env_url) {
+        if (is_downloading.load()) {
+            return;
+        }
         downloader->set_download_url(env_url);
     }
 
@@ -1068,6 +1101,7 @@ void LLMSelectionDialog::handle_delete_download()
 
     downloader->cancel_download();
     is_downloading.store(false);
+    update_local_download_choice_enabled_state();
 
     std::error_code ec;
     bool removed_any = false;
@@ -1111,8 +1145,11 @@ void LLMSelectionDialog::update_download_info()
                                                  QString::fromStdString(downloader->get_download_destination()),
                                                  QStringLiteral("#2e7d32")));
 
+    const auto local_status = downloader->get_local_download_status();
     long long size = downloader->get_real_content_length();
-    if (size <= 0 && downloader->get_local_download_status() == LLMDownloader::DownloadStatus::Complete) {
+    if (local_status == LLMDownloader::DownloadStatus::Corrupt) {
+        size = local_file_size_or_zero(downloader->get_download_destination());
+    } else if (size <= 0 && local_status == LLMDownloader::DownloadStatus::Complete) {
         size = local_file_size_or_zero(downloader->get_download_destination());
     }
     if (size > 0) {
@@ -1463,7 +1500,10 @@ void LLMSelectionDialog::refresh_visual_llm_download_entry(VisualLlmDownloadEntr
 
     if (!entry.downloader) {
         entry.downloader = std::make_unique<LLMDownloader>(env_url, destination_path);
-    } else {
+    } else if (entry.downloader->get_download_url() != env_url) {
+        if (entry.is_downloading.load()) {
+            return;
+        }
         entry.downloader->set_download_url(env_url);
     }
 
@@ -1527,7 +1567,9 @@ void LLMSelectionDialog::update_visual_llm_download_entry(VisualLlmDownloadEntry
             size = local_file_size_or_zero(entry.resolved_artifact_path->string());
         } else {
             size = entry.downloader->get_real_content_length();
-            if (size <= 0 && local_status == LLMDownloader::DownloadStatus::Complete) {
+            if (local_status == LLMDownloader::DownloadStatus::Corrupt) {
+                size = local_file_size_or_zero(entry.downloader->get_download_destination());
+            } else if (size <= 0 && local_status == LLMDownloader::DownloadStatus::Complete) {
                 size = local_file_size_or_zero(entry.downloader->get_download_destination());
             }
         }
@@ -1558,6 +1600,22 @@ void LLMSelectionDialog::update_visual_llm_download_entry(VisualLlmDownloadEntry
             entry.delete_button->setEnabled(true);
         }
         set_visual_status_message(entry, tr("Model ready."));
+        break;
+    case LLMDownloader::DownloadStatus::Corrupt:
+        if (entry.progress_bar) {
+            entry.progress_bar->setVisible(false);
+            entry.progress_bar->setValue(0);
+        }
+        if (entry.download_button) {
+            entry.download_button->setVisible(true);
+            entry.download_button->setEnabled(!entry.is_downloading.load());
+            entry.download_button->setText(tr("Download"));
+        }
+        if (entry.delete_button) {
+            entry.delete_button->setVisible(true);
+            entry.delete_button->setEnabled(true);
+        }
+        set_visual_status_message(entry, tr("Downloaded file is invalid or incomplete. Delete it and download again."));
         break;
     case LLMDownloader::DownloadStatus::InProgress:
         if (entry.progress_bar) {
@@ -1939,6 +1997,7 @@ void LLMSelectionDialog::start_download()
     }
 
     is_downloading = true;
+    update_local_download_choice_enabled_state();
     download_button->setEnabled(false);
     progress_bar->setVisible(true);
     set_status_message(tr("Downloading…"));
@@ -1955,6 +2014,7 @@ void LLMSelectionDialog::start_download()
         [this]() {
             QMetaObject::invokeMethod(this, [this]() {
                 is_downloading = false;
+                update_local_download_choice_enabled_state();
                 set_status_message(tr("Download complete."));
                 update_ui_for_choice();
             }, Qt::QueuedConnection);
@@ -1967,6 +2027,7 @@ void LLMSelectionDialog::start_download()
         [this](const std::string& error_text) {
             QMetaObject::invokeMethod(this, [this, error_text]() {
                 is_downloading = false;
+                update_local_download_choice_enabled_state();
                 progress_bar->setVisible(false);
                 download_button->setEnabled(true);
 

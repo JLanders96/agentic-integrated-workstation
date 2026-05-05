@@ -535,6 +535,13 @@ Procedure: Build the dialog and inspect the active visual-model entry.
 Expected outcome: The LLaVA entry treats the legacy generic mmproj as available.
 Run: `./build-tests/ai_file_sorter_tests "Visual dialog accepts the legacy LLaVA generic mmproj without metadata"`
 
+#### Test case: Visual dialog does not mark invalid preferred artifacts as ready
+Purpose: Ensure the visual download UI does not treat corrupt backend-specific GGUF files as ready just because they exist on disk.
+Setup: Select the Gemma visual backend, create a valid mmproj artifact, and create an invalid model artifact at the preferred backend storage path.
+Procedure: Build the dialog and inspect the selected backend entry for the invalid model artifact.
+Expected outcome: The entry reports that the downloaded file is invalid or incomplete instead of showing `Model ready.`.
+Run: `./build-tests/ai_file_sorter_tests "Visual dialog does not mark invalid preferred artifacts as ready"`
+
 ### `tests/unit/test_visual_llm_runtime.cpp`
 
 #### Test case: Default visual model descriptor exposes the MTMD backend catalog
@@ -564,6 +571,13 @@ Setup: Set `GEMMA3_4B_MODEL_URL` and `GEMMA3_4B_MMPROJ_URL`, then create the cor
 Procedure: Call `resolve_active_backend("gemma-3-4b-it")`.
 Expected outcome: The runtime returns the Gemma descriptor and resolves both artifact paths from the alternate backend env vars.
 Run: `./build-tests/ai_file_sorter_tests "VisualLlmRuntime resolves a non-default backend by id"`
+
+#### Test case: VisualLlmRuntime rejects invalid preferred GGUF artifacts
+Purpose: Ensure preferred backend artifact paths are only accepted when they contain a valid GGUF header.
+Setup: Configure the default Gemma backend and create invalid placeholder files at the preferred model and mmproj storage paths.
+Procedure: Call `resolve_active_backend()` with an error string output.
+Expected outcome: Resolution fails and reports the preferred model artifact as missing, because invalid GGUF placeholders are ignored.
+Run: `./build-tests/ai_file_sorter_tests "VisualLlmRuntime rejects invalid preferred GGUF artifacts"`
 
 ### `tests/unit/test_settings_image_options.cpp`
 
@@ -677,6 +691,27 @@ Setup: Create a local file whose size matches the cached content length.
 Procedure: Construct the downloader and query its status.
 Expected outcome: Both local and overall download status report `Complete`.
 Run: `./build-tests/ai_file_sorter_tests "LLMDownloader treats full local file as complete with cached metadata"`
+
+#### Test case: LLMDownloader rejects short completed downloads before replacing the final file
+Purpose: Ensure a truncated download cannot overwrite an existing completed model file during finalization.
+Setup: Seed a valid final GGUF file, configure the downloader with an expected content length, and inject a probe that writes a one-byte partial file before returning success.
+Procedure: Start the download and wait for the error callback.
+Expected outcome: Finalization fails with a size-mismatch error, the original final file remains intact, and the short `.part` file is preserved for inspection.
+Run: `./build-tests/ai_file_sorter_tests "LLMDownloader rejects short completed downloads before replacing the final file"`
+
+#### Test case: LLMDownloader rejects invalid GGUF downloads before replacing the final file
+Purpose: Ensure a completed transfer still fails if the resulting `.gguf` payload does not contain a GGUF header.
+Setup: Seed a valid final GGUF file, configure the downloader with a matching expected size, and inject a probe that writes same-sized non-GGUF bytes to the partial file before returning success.
+Procedure: Start the download and wait for the error callback.
+Expected outcome: Finalization fails with an `expected GGUF header` error, the original final file remains intact, and the invalid `.part` file is left on disk.
+Run: `./build-tests/ai_file_sorter_tests "LLMDownloader rejects invalid GGUF downloads before replacing the final file"`
+
+#### Test case: LLMDownloader does not let callers retarget an active download
+Purpose: Prevent live downloads from being rebound to a different model URL while the worker thread is still running.
+Setup: Start a download with a blocking test probe so the worker thread remains active.
+Procedure: Call `set_download_url()` with a different URL before releasing the probe.
+Expected outcome: `set_download_url()` throws, the active download keeps its original URL, and the worker exits cleanly after cancellation.
+Run: `./build-tests/ai_file_sorter_tests "LLMDownloader does not let callers retarget an active download"`
 
 ### `tests/unit/test_update_feed.cpp`
 

@@ -102,6 +102,10 @@ private:
     void update_gemini_fields_state();
     bool openai_inputs_valid() const;
     bool gemini_inputs_valid() const;
+    /**
+     * @brief Enable or disable built-in local model selectors while a download is active.
+     */
+    void update_local_download_choice_enabled_state();
     void update_local_choice_ui();
     void update_download_info();
     void start_download();

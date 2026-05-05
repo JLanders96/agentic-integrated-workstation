@@ -1,5 +1,6 @@
 #include "VisualModelCatalog.hpp"
 
+#include "GgufFileValidation.hpp"
 #include "Utils.hpp"
 
 #include <algorithm>
@@ -50,6 +51,10 @@ bool accept_legacy_candidate(const VisualModelDescriptor& backend,
                              const std::filesystem::path& candidate,
                              std::string_view download_url)
 {
+    if (!has_gguf_header(candidate)) {
+        return false;
+    }
+
     const auto cached_url = read_cached_download_url(candidate);
     if (cached_url.has_value()) {
         return std::string_view(*cached_url) == download_url;
@@ -159,7 +164,7 @@ std::optional<std::filesystem::path> resolve_visual_artifact_path(
     std::string_view download_url)
 {
     const auto preferred_path = visual_artifact_storage_path(backend, artifact);
-    if (std::filesystem::exists(preferred_path)) {
+    if (std::filesystem::exists(preferred_path) && has_gguf_header(preferred_path)) {
         return preferred_path;
     }
 

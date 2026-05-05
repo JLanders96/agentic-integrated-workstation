@@ -354,6 +354,10 @@
         <translation>완료됨</translation>
     </message>
     <message>
+        <source>Skipped</source>
+        <translation>건너뜀</translation>
+    </message>
+    <message>
         <location filename="../../lib/CategorizationProgressDialog.cpp" line="661"/>
         <source>Processed 0/0  |  In progress: 0  |  Pending: 0</source>
         <translation>처리됨 0/0  |  진행 중: 0  |  대기 중: 0</translation>
@@ -736,6 +740,12 @@ Supports: Nvidia (CUDA), Apple (Metal), CPU.</source>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1575"/>
         <source>Partial download detected. You can resume.</source>
         <translation>부분 다운로드가 감지되었습니다. 재개할 수 있습니다.</translation>
+    </message>
+    <message>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1006"/>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1586"/>
+        <source>Downloaded file is invalid or incomplete. Delete it and download again.</source>
+        <translation type="unfinished">Downloaded file is invalid or incomplete. Delete it and download again.</translation>
     </message>
     <message>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1012"/>
@@ -1192,6 +1202,22 @@ Please open this link manually:
         <location filename="../../lib/MainApp.cpp" line="2100"/>
         <source>[WARN] GPU fallback to CPU declined. Cancelling analysis.</source>
         <translation>[WARN] GPU에서 CPU로의 전환이 거부되었습니다. 분석을 취소합니다.</translation>
+    </message>
+    <message>
+        <source>Continue without visual analysis?</source>
+        <translation>이미지 분석 없이 계속하시겠습니까?</translation>
+    </message>
+    <message>
+        <source>Image analysis is unavailable.</source>
+        <translation>이미지 분석을 사용할 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>Continue this analysis using filenames only? Cancel will stop this analysis.</source>
+        <translation>파일 이름만 사용하여 이 분석을 계속하시겠습니까? 취소하면 이 분석이 중단됩니다.</translation>
+    </message>
+    <message>
+        <source>[WARN] Continue without visual analysis declined. Cancelling analysis.</source>
+        <translation>[경고] 이미지 분석 없이 계속하기가 거부되었습니다. 분석을 취소합니다.</translation>
     </message>
     <message>
         <location filename="../../lib/MainApp.cpp" line="2270"/>

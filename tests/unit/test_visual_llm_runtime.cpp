@@ -10,6 +10,16 @@
 
 namespace {
 
+void write_gguf_file(const std::filesystem::path& path, std::size_t size = 16)
+{
+    std::filesystem::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write("GGUF", 4);
+    for (std::size_t i = 4; i < size; ++i) {
+        out.put('\0');
+    }
+}
+
 void write_download_metadata(const std::filesystem::path& artifact_path, const std::string& url)
 {
     std::ofstream meta(artifact_path.string() + ".aifs.meta", std::ios::trunc);
@@ -80,9 +90,8 @@ TEST_CASE("VisualLlmRuntime resolves the active backend through descriptor artif
     const auto& descriptor = default_visual_model_descriptor();
     const auto model_path = visual_artifact_storage_path(descriptor, descriptor.artifacts[0]);
     const auto mmproj_path = visual_artifact_storage_path(descriptor, descriptor.artifacts[1]);
-    std::filesystem::create_directories(model_path.parent_path());
-    std::ofstream(model_path).put('x');
-    std::ofstream(mmproj_path).put('x');
+    write_gguf_file(model_path);
+    write_gguf_file(mmproj_path);
 
     std::string error;
     const auto backend = VisualLlmRuntime::resolve_active_backend({}, &error);
@@ -123,9 +132,8 @@ TEST_CASE("VisualLlmRuntime resolves a non-default backend by id") {
     REQUIRE(descriptor != nullptr);
     const auto model_path = visual_artifact_storage_path(*descriptor, descriptor->artifacts[0]);
     const auto mmproj_path = visual_artifact_storage_path(*descriptor, descriptor->artifacts[1]);
-    std::filesystem::create_directories(model_path.parent_path());
-    std::ofstream(model_path).put('x');
-    std::ofstream(mmproj_path).put('x');
+    write_gguf_file(model_path);
+    write_gguf_file(mmproj_path);
 
     std::string error;
     const auto backend = VisualLlmRuntime::resolve_active_backend("gemma-3-4b-it", &error);
@@ -153,9 +161,8 @@ TEST_CASE("VisualLlmRuntime accepts legacy generic mmproj files when metadata ma
     const auto legacy_mmproj_path =
         std::filesystem::path(Utils::make_default_path_to_file_from_download_url(mmproj_url));
 
-    std::filesystem::create_directories(model_path.parent_path());
-    std::ofstream(model_path).put('x');
-    std::ofstream(legacy_mmproj_path).put('x');
+    write_gguf_file(model_path);
+    write_gguf_file(legacy_mmproj_path);
     write_download_metadata(legacy_mmproj_path, mmproj_url);
 
     std::string error;
@@ -179,9 +186,8 @@ TEST_CASE("VisualLlmRuntime accepts the legacy LLaVA generic mmproj without meta
     const auto legacy_mmproj_path =
         std::filesystem::path(Utils::make_default_path_to_file_from_download_url(mmproj_url));
 
-    std::filesystem::create_directories(model_path.parent_path());
-    std::ofstream(model_path).put('x');
-    std::ofstream(legacy_mmproj_path).put('x');
+    write_gguf_file(model_path);
+    write_gguf_file(legacy_mmproj_path);
 
     std::string error;
     const auto backend = VisualLlmRuntime::resolve_active_backend("llava-v1.6-mistral-7b", &error);
@@ -206,9 +212,8 @@ TEST_CASE("VisualLlmRuntime does not misattribute a legacy generic mmproj from a
     const auto legacy_mmproj_path =
         std::filesystem::path(Utils::make_default_path_to_file_from_download_url(gemma_mmproj_url));
 
-    std::filesystem::create_directories(model_path.parent_path());
-    std::ofstream(model_path).put('x');
-    std::ofstream(legacy_mmproj_path).put('x');
+    write_gguf_file(model_path);
+    write_gguf_file(legacy_mmproj_path);
     write_download_metadata(legacy_mmproj_path, llava_mmproj_url);
 
     std::string error;
@@ -216,4 +221,24 @@ TEST_CASE("VisualLlmRuntime does not misattribute a legacy generic mmproj from a
     CHECK(error ==
           std::string("Visual LLM mmproj file is missing: ")
               + visual_artifact_storage_path(*descriptor, descriptor->artifacts[1]).string());
+}
+
+TEST_CASE("VisualLlmRuntime rejects invalid preferred GGUF artifacts") {
+    VisualRuntimeTempEnv env;
+    const std::string model_url = "https://example.com/gemma-3-4b-it-Q4_K_M.gguf";
+    const std::string mmproj_url = "https://example.com/mmproj-gemma-3-4b-it-Q4_K_M.gguf";
+    EnvVarGuard model_guard("GEMMA3_4B_MODEL_URL", model_url);
+    EnvVarGuard mmproj_guard("GEMMA3_4B_MMPROJ_URL", mmproj_url);
+
+    const auto& descriptor = default_visual_model_descriptor();
+    const auto model_path = visual_artifact_storage_path(descriptor, descriptor.artifacts[0]);
+    const auto mmproj_path = visual_artifact_storage_path(descriptor, descriptor.artifacts[1]);
+    std::filesystem::create_directories(model_path.parent_path());
+    std::ofstream(model_path, std::ios::binary | std::ios::trunc).put('x');
+    std::ofstream(mmproj_path, std::ios::binary | std::ios::trunc).put('x');
+
+    std::string error;
+    CHECK_FALSE(VisualLlmRuntime::resolve_active_backend({}, &error).has_value());
+    CHECK(error ==
+          std::string("Visual LLM model file is missing: ") + model_path.string());
 }

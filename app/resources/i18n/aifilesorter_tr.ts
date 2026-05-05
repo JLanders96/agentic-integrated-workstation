@@ -354,6 +354,10 @@
         <translation>Tamamlandı</translation>
     </message>
     <message>
+        <source>Skipped</source>
+        <translation>Atlandı</translation>
+    </message>
+    <message>
         <location filename="../../lib/CategorizationProgressDialog.cpp" line="661"/>
         <source>Processed 0/0  |  In progress: 0  |  Pending: 0</source>
         <translation>İşlenen 0/0  |  Devam eden: 0  |  Bekleyen: 0</translation>
@@ -736,6 +740,12 @@ Destekler: Nvidia (CUDA), Apple (Metal), CPU.</translation>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1575"/>
         <source>Partial download detected. You can resume.</source>
         <translation>Kısmi indirme tespit edildi. Devam edebilirsiniz.</translation>
+    </message>
+    <message>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1006"/>
+        <location filename="../../lib/LLMSelectionDialog.cpp" line="1586"/>
+        <source>Downloaded file is invalid or incomplete. Delete it and download again.</source>
+        <translation type="unfinished">Downloaded file is invalid or incomplete. Delete it and download again.</translation>
     </message>
     <message>
         <location filename="../../lib/LLMSelectionDialog.cpp" line="1012"/>
@@ -1192,6 +1202,22 @@ Lütfen bu bağlantıyı elle açın:
         <location filename="../../lib/MainApp.cpp" line="2100"/>
         <source>[WARN] GPU fallback to CPU declined. Cancelling analysis.</source>
         <translation>[WARN] GPU&apos;dan CPU&apos;ya geri dönüş reddedildi. Analiz iptal ediliyor.</translation>
+    </message>
+    <message>
+        <source>Continue without visual analysis?</source>
+        <translation>Görsel analiz olmadan devam edilsin mi?</translation>
+    </message>
+    <message>
+        <source>Image analysis is unavailable.</source>
+        <translation>Görsel analiz kullanılamıyor.</translation>
+    </message>
+    <message>
+        <source>Continue this analysis using filenames only? Cancel will stop this analysis.</source>
+        <translation>Bu analize yalnızca dosya adlarını kullanarak devam edilsin mi? İptal bu analizi durdurur.</translation>
+    </message>
+    <message>
+        <source>[WARN] Continue without visual analysis declined. Cancelling analysis.</source>
+        <translation>[UYARI] Görsel analiz olmadan devam etme reddedildi. Analiz iptal ediliyor.</translation>
     </message>
     <message>
         <location filename="../../lib/MainApp.cpp" line="2270"/>

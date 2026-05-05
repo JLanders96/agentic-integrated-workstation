@@ -1,4 +1,5 @@
 #include "LLMDownloader.hpp"
+#include "GgufFileValidation.hpp"
 #include "Utils.hpp"
 #include "Logger.hpp"
 #include "TestHooks.hpp"
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <system_error>
 #include <stdexcept>
 #ifdef _WIN32
@@ -40,6 +42,17 @@ bool replace_download_file(const std::filesystem::path& source,
     error = ec.message();
     return false;
 #endif
+}
+
+std::string describe_size_mismatch(const std::filesystem::path& path,
+                                   long long expected_size,
+                                   long long actual_size)
+{
+    std::ostringstream oss;
+    oss << "Downloaded file size mismatch for '" << path.string()
+        << "': expected " << expected_size
+        << " bytes, got " << actual_size << " bytes.";
+    return oss.str();
 }
 
 #ifdef AI_FILE_SORTER_TEST_BUILD
@@ -317,11 +330,13 @@ void LLMDownloader::start_download(std::function<void(double)> progress_cb,
     this->on_download_complete = std::move(on_complete_cb);
     this->on_status_text = std::move(on_status_text);
     this->on_download_error = std::move(on_error_cb);
+    download_active.store(true, std::memory_order_relaxed);
 
     download_thread = std::thread([this]() {
         try {
             perform_download();
         } catch (const std::exception& ex) {
+            download_active.store(false, std::memory_order_relaxed);
             if (auto logger = Logger::get_logger("core_logger")) {
                 logger->error("LLM download failed: {}", ex.what());
             }
@@ -331,7 +346,9 @@ void LLMDownloader::start_download(std::function<void(double)> progress_cb,
             if (this->on_download_error) {
                 this->on_download_error(ex.what());
             }
+            return;
         }
+        download_active.store(false, std::memory_order_relaxed);
     });
 }
 
@@ -461,10 +478,15 @@ void LLMDownloader::notify_download_complete()
 
     std::error_code exists_ec;
     if (std::filesystem::exists(partial_path, exists_ec) && !exists_ec) {
+        if (const auto error = validate_completed_artifact(partial_path)) {
+            throw std::runtime_error(*error);
+        }
         std::string error;
         if (!replace_download_file(partial_path, final_path, error)) {
             throw std::runtime_error("Failed to finalize download: " + error);
         }
+    } else if (const auto error = validate_completed_artifact(final_path)) {
+        throw std::runtime_error(*error);
     }
 
     persist_cached_metadata();
@@ -608,16 +630,7 @@ bool LLMDownloader::is_download_resumable() const
 
 bool LLMDownloader::is_download_complete() const
 {
-    try {
-        const auto partial_path = partial_download_path();
-        if (std::filesystem::exists(partial_path) && std::filesystem::file_size(partial_path) > 0) {
-            return false;
-        }
-        auto file_size = std::filesystem::file_size(download_destination);
-        return static_cast<std::int64_t>(file_size) >= real_content_length;
-    } catch (const std::filesystem::filesystem_error&) {
-        return false;
-    }
+    return get_local_download_status() == DownloadStatus::Complete;
 }
 
 
@@ -657,6 +670,12 @@ LLMDownloader::DownloadStatus LLMDownloader::get_local_download_status() const
     const auto local_size = static_cast<long long>(size);
     if (real_content_length > 0 && local_size < real_content_length) {
         return DownloadStatus::InProgress;
+    }
+    if (real_content_length > 0 && local_size > real_content_length) {
+        return DownloadStatus::Corrupt;
+    }
+    if (validate_completed_artifact(std::filesystem::path(download_destination)).has_value()) {
+        return DownloadStatus::Corrupt;
     }
 
     return DownloadStatus::Complete;
@@ -712,6 +731,9 @@ LLMDownloader::~LLMDownloader() {
 
 void LLMDownloader::set_download_url(const std::string& new_url) {
     if (new_url == url) return;
+    if (download_active.load(std::memory_order_relaxed)) {
+        throw std::logic_error("Cannot change the download URL while a download is active.");
+    }
 
     url = new_url;
     initialized = false;
@@ -731,6 +753,30 @@ void LLMDownloader::set_download_url(const std::string& new_url) {
 std::string LLMDownloader::get_download_url()
 {
     return url;
+}
+
+std::optional<std::string> LLMDownloader::validate_completed_artifact(
+    const std::filesystem::path& candidate) const
+{
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(candidate, ec);
+    if (ec || size == 0) {
+        return std::string("Downloaded file is missing or empty: ") + candidate.string();
+    }
+
+    const auto actual_size = static_cast<long long>(size);
+    if (real_content_length > 0 && actual_size != real_content_length) {
+        return describe_size_mismatch(candidate, real_content_length, actual_size);
+    }
+
+    const bool expects_gguf = is_gguf_file_path(std::filesystem::path(download_destination))
+        || is_gguf_file_path(candidate);
+    if (expects_gguf && !has_gguf_header(candidate)) {
+        return std::string("Downloaded file is invalid or incomplete (expected GGUF header): ")
+            + candidate.string();
+    }
+
+    return std::nullopt;
 }
 
 #ifdef AI_FILE_SORTER_TEST_BUILD
