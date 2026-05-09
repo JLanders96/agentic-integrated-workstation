@@ -2628,6 +2628,66 @@ Please update to continue. If you choose to quit, the application will close.</s
         <source>&amp;Korean</source>
         <translation>&amp;कोरियाई</translation>
     </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Swedish</source>
+
+        <translation>&amp;स्वीडिश</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="70"/>
+
+        <source>&amp;Icelandic</source>
+
+        <translation>&amp;आइसलैंड का</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="71"/>
+
+        <source>&amp;Norwegian</source>
+
+        <translation>&amp;नार्वेजियन</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="72"/>
+
+        <source>&amp;Finnish</source>
+
+        <translation>&amp;फिनिश</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="73"/>
+
+        <source>&amp;Danish</source>
+
+        <translation>&amp;डेनिश</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Simplified Chinese</source>
+
+        <translation>&amp;सरलीकृत चीनी</translation>
+
+    </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="85"/>
         <source>&amp;Quick Start Guide</source>

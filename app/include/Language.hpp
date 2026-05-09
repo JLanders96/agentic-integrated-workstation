@@ -12,7 +12,13 @@ enum class Language {
     Spanish,
     Turkish,
     Korean,
-    Dutch
+    SimplifiedChinese,
+    Dutch,
+    Swedish,
+    Icelandic,
+    Norwegian,
+    Finnish,
+    Danish
 };
 
 inline QString languageToString(Language language)
@@ -30,8 +36,20 @@ inline QString languageToString(Language language)
         return QStringLiteral("Turkish");
     case Language::Korean:
         return QStringLiteral("Korean");
+    case Language::SimplifiedChinese:
+        return QStringLiteral("Simplified Chinese");
     case Language::Dutch:
         return QStringLiteral("Dutch");
+    case Language::Swedish:
+        return QStringLiteral("Swedish");
+    case Language::Icelandic:
+        return QStringLiteral("Icelandic");
+    case Language::Norwegian:
+        return QStringLiteral("Norwegian");
+    case Language::Finnish:
+        return QStringLiteral("Finnish");
+    case Language::Danish:
+        return QStringLiteral("Danish");
     case Language::French:
         return QStringLiteral("French");
     case Language::English:
@@ -64,8 +82,33 @@ inline Language languageFromString(const QString& value)
     if (lowered == QStringLiteral("korean") || lowered == QStringLiteral("ko")) {
         return Language::Korean;
     }
+    if (lowered == QStringLiteral("simplified chinese")
+        || lowered == QStringLiteral("simplified_chinese")
+        || lowered == QStringLiteral("zh")
+        || lowered == QStringLiteral("zh-cn")
+        || lowered == QStringLiteral("zh_cn")
+        || lowered == QStringLiteral("zh-hans")
+        || lowered == QStringLiteral("zh_hans")) {
+        return Language::SimplifiedChinese;
+    }
     if (lowered == QStringLiteral("dutch") || lowered == QStringLiteral("nl")) {
         return Language::Dutch;
+    }
+    if (lowered == QStringLiteral("swedish") || lowered == QStringLiteral("sv")) {
+        return Language::Swedish;
+    }
+    if (lowered == QStringLiteral("icelandic") || lowered == QStringLiteral("is")) {
+        return Language::Icelandic;
+    }
+    if (lowered == QStringLiteral("norwegian") || lowered == QStringLiteral("nb")
+        || lowered == QStringLiteral("no")) {
+        return Language::Norwegian;
+    }
+    if (lowered == QStringLiteral("finnish") || lowered == QStringLiteral("fi")) {
+        return Language::Finnish;
+    }
+    if (lowered == QStringLiteral("danish") || lowered == QStringLiteral("da")) {
+        return Language::Danish;
     }
     return Language::English;
 }

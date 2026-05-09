@@ -94,6 +94,12 @@ struct UiTranslatorTestHarness {
     QAction* german_action = new QAction(&window);
     QAction* hindi_action = new QAction(&window);
     QAction* italian_action = new QAction(&window);
+    QAction* simplified_chinese_action = new QAction(&window);
+    QAction* swedish_action = new QAction(&window);
+    QAction* icelandic_action = new QAction(&window);
+    QAction* norwegian_action = new QAction(&window);
+    QAction* finnish_action = new QAction(&window);
+    QAction* danish_action = new QAction(&window);
     QAction* spanish_action = new QAction(&window);
     QAction* turkish_action = new QAction(&window);
     QAction* korean_action = new QAction(&window);
@@ -156,6 +162,18 @@ struct UiTranslatorTestHarness {
         hindi_action->setData(static_cast<int>(Language::Hindi));
         italian_action->setCheckable(true);
         italian_action->setData(static_cast<int>(Language::Italian));
+        simplified_chinese_action->setCheckable(true);
+        simplified_chinese_action->setData(static_cast<int>(Language::SimplifiedChinese));
+        swedish_action->setCheckable(true);
+        swedish_action->setData(static_cast<int>(Language::Swedish));
+        icelandic_action->setCheckable(true);
+        icelandic_action->setData(static_cast<int>(Language::Icelandic));
+        norwegian_action->setCheckable(true);
+        norwegian_action->setData(static_cast<int>(Language::Norwegian));
+        finnish_action->setCheckable(true);
+        finnish_action->setData(static_cast<int>(Language::Finnish));
+        danish_action->setCheckable(true);
+        danish_action->setData(static_cast<int>(Language::Danish));
         spanish_action->setCheckable(true);
         turkish_action->setCheckable(true);
         spanish_action->setData(static_cast<int>(Language::Spanish));
@@ -168,6 +186,12 @@ struct UiTranslatorTestHarness {
         language_group->addAction(german_action);
         language_group->addAction(hindi_action);
         language_group->addAction(italian_action);
+        language_group->addAction(simplified_chinese_action);
+        language_group->addAction(swedish_action);
+        language_group->addAction(icelandic_action);
+        language_group->addAction(norwegian_action);
+        language_group->addAction(finnish_action);
+        language_group->addAction(danish_action);
         language_group->addAction(spanish_action);
         language_group->addAction(turkish_action);
         language_group->addAction(korean_action);
@@ -240,6 +264,12 @@ struct UiTranslatorTestHarness {
                 german_action,
                 hindi_action,
                 italian_action,
+                simplified_chinese_action,
+                swedish_action,
+                icelandic_action,
+                norwegian_action,
+                finnish_action,
+                danish_action,
                 spanish_action,
                 turkish_action,
                 korean_action,
@@ -266,6 +296,12 @@ struct UiTranslatorTestHarness {
                 german_action,
                 hindi_action,
                 italian_action,
+                simplified_chinese_action,
+                swedish_action,
+                icelandic_action,
+                norwegian_action,
+                finnish_action,
+                danish_action,
                 spanish_action,
                 turkish_action,
                 korean_action},

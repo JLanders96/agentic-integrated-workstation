@@ -2286,6 +2286,66 @@ Bitte aktualisieren Sie, um fortzufahren. Wenn Sie Beenden wählen, wird die Anw
         <source>&amp;Korean</source>
         <translation>&amp;Koreanisch</translation>
     </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Swedish</source>
+
+        <translation>&amp;Schwedisch</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="70"/>
+
+        <source>&amp;Icelandic</source>
+
+        <translation>&amp;isländisch</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="71"/>
+
+        <source>&amp;Norwegian</source>
+
+        <translation>&amp;norwegisch</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="72"/>
+
+        <source>&amp;Finnish</source>
+
+        <translation>&amp;finnisch</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="73"/>
+
+        <source>&amp;Danish</source>
+
+        <translation>&amp;dänisch</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Simplified Chinese</source>
+
+        <translation>&amp;Vereinfachtes Chinesisch</translation>
+
+    </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="72"/>
         <source>Dutch</source>

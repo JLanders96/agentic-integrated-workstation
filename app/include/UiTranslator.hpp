@@ -107,6 +107,12 @@ public:
         QAction*& german_action;
         QAction*& hindi_action;
         QAction*& italian_action;
+        QAction*& simplified_chinese_action;
+        QAction*& swedish_action;
+        QAction*& icelandic_action;
+        QAction*& norwegian_action;
+        QAction*& finnish_action;
+        QAction*& danish_action;
         QAction*& spanish_action;
         QAction*& turkish_action;
         QAction*& korean_action;
@@ -138,6 +144,12 @@ public:
         QAction*& german_action;
         QAction*& hindi_action;
         QAction*& italian_action;
+        QAction*& simplified_chinese_action;
+        QAction*& swedish_action;
+        QAction*& icelandic_action;
+        QAction*& norwegian_action;
+        QAction*& finnish_action;
+        QAction*& danish_action;
         QAction*& spanish_action;
         QAction*& turkish_action;
         QAction*& korean_action;

@@ -586,6 +586,12 @@ UiTranslator::Dependencies MainAppUiBuilder::build_translator_dependencies(MainA
             app.german_action,
             app.hindi_action,
             app.italian_action,
+            app.simplified_chinese_action,
+            app.swedish_action,
+            app.icelandic_action,
+            app.norwegian_action,
+            app.finnish_action,
+            app.danish_action,
             app.spanish_action,
             app.turkish_action,
             app.korean_action,
@@ -612,6 +618,12 @@ UiTranslator::Dependencies MainAppUiBuilder::build_translator_dependencies(MainA
             app.german_action,
             app.hindi_action,
             app.italian_action,
+            app.simplified_chinese_action,
+            app.swedish_action,
+            app.icelandic_action,
+            app.norwegian_action,
+            app.finnish_action,
+            app.danish_action,
             app.spanish_action,
             app.turkish_action,
             app.korean_action},
@@ -749,10 +761,34 @@ void MainAppUiBuilder::build_settings_menu(MainApp& app) {
     app.italian_action->setCheckable(true);
     app.italian_action->setData(static_cast<int>(Language::Italian));
     app.language_group->addAction(app.italian_action);
+    app.simplified_chinese_action = app.language_menu->addAction(QString());
+    app.simplified_chinese_action->setCheckable(true);
+    app.simplified_chinese_action->setData(static_cast<int>(Language::SimplifiedChinese));
+    app.language_group->addAction(app.simplified_chinese_action);
+    app.swedish_action = app.language_menu->addAction(QString());
+    app.swedish_action->setCheckable(true);
+    app.swedish_action->setData(static_cast<int>(Language::Swedish));
+    app.language_group->addAction(app.swedish_action);
+    app.icelandic_action = app.language_menu->addAction(QString());
+    app.icelandic_action->setCheckable(true);
+    app.icelandic_action->setData(static_cast<int>(Language::Icelandic));
+    app.language_group->addAction(app.icelandic_action);
     app.korean_action = app.language_menu->addAction(QString());
     app.korean_action->setCheckable(true);
     app.korean_action->setData(static_cast<int>(Language::Korean));
     app.language_group->addAction(app.korean_action);
+    app.norwegian_action = app.language_menu->addAction(QString());
+    app.norwegian_action->setCheckable(true);
+    app.norwegian_action->setData(static_cast<int>(Language::Norwegian));
+    app.language_group->addAction(app.norwegian_action);
+    app.finnish_action = app.language_menu->addAction(QString());
+    app.finnish_action->setCheckable(true);
+    app.finnish_action->setData(static_cast<int>(Language::Finnish));
+    app.language_group->addAction(app.finnish_action);
+    app.danish_action = app.language_menu->addAction(QString());
+    app.danish_action->setCheckable(true);
+    app.danish_action->setData(static_cast<int>(Language::Danish));
+    app.language_group->addAction(app.danish_action);
     app.spanish_action = app.language_menu->addAction(QString());
     app.spanish_action->setCheckable(true);
     app.spanish_action->setData(static_cast<int>(Language::Spanish));

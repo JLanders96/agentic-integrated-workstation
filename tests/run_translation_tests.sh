@@ -12,6 +12,12 @@ TS_FILES=(
     "$ROOT_DIR/app/resources/i18n/aifilesorter_it.ts"
     "$ROOT_DIR/app/resources/i18n/aifilesorter_es.ts"
     "$ROOT_DIR/app/resources/i18n/aifilesorter_nl.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_zh_cn.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_sv.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_is.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_nb.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_fi.ts"
+    "$ROOT_DIR/app/resources/i18n/aifilesorter_da.ts"
     "$ROOT_DIR/app/resources/i18n/aifilesorter_tr.ts"
     "$ROOT_DIR/app/resources/i18n/aifilesorter_ko.ts"
 )

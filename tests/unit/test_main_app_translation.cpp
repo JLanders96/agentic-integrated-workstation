@@ -31,10 +31,16 @@ TEST_CASE("MainApp retranslate reflects language changes") {
         {Language::German, QStringLiteral("Ordner analysieren"), QStringLiteral("Ordner:")},
         {Language::Hindi, QStringLiteral("फ़ोल्डर का विश्लेषण करें"), QStringLiteral("फ़ोल्डर:")},
         {Language::Italian, QStringLiteral("Analizza cartella"), QStringLiteral("Cartella:")},
+        {Language::Swedish, QStringLiteral("Analysera mappen"), QStringLiteral("Mapp:")},
+        {Language::Icelandic, QStringLiteral("Greindu möppu"), QStringLiteral("Mappa:")},
+        {Language::Norwegian, QStringLiteral("Analyser mappe"), QStringLiteral("Mappe:")},
+        {Language::Finnish, QStringLiteral("Analysoi kansio"), QStringLiteral("Kansio:")},
+        {Language::Danish, QStringLiteral("Analyser mappe"), QStringLiteral("Mappe:")},
         {Language::Spanish, QStringLiteral("Analizar carpeta"), QStringLiteral("Carpeta:")},
         {Language::Dutch, QStringLiteral("Map analyseren"), QStringLiteral("Map:")},
         {Language::Turkish, QStringLiteral("Klasörü analiz et"), QStringLiteral("Klasör:")},
-        {Language::Korean, QStringLiteral("폴더 분석"), QStringLiteral("폴더:")}
+        {Language::Korean, QStringLiteral("폴더 분석"), QStringLiteral("폴더:")},
+        {Language::SimplifiedChinese, QStringLiteral("分析文件夹"), QStringLiteral("文件夹：")}
     };
 
     for (const auto& entry : expected) {
@@ -120,6 +126,56 @@ TEST_CASE("Top-level menu titles are translated for all supported UI languages")
          QStringLiteral("&Test"),
          QStringLiteral("Lingua dell'&interfaccia"),
          QStringLiteral("Lingua delle &categorie")},
+        {Language::Swedish,
+         QStringLiteral("&Arkiv"),
+         QStringLiteral("&Redigera"),
+         QStringLiteral("&Visa"),
+         QStringLiteral("&Inställningar"),
+         QStringLiteral("&Plugins"),
+         QStringLiteral("&Utveckling"),
+         QStringLiteral("&Tester"),
+         QStringLiteral("&Gränssnittsspråk"),
+         QStringLiteral("&Kategorispråk")},
+        {Language::Icelandic,
+         QStringLiteral("&Skrá"),
+         QStringLiteral("&Breyta"),
+         QStringLiteral("&Skoða"),
+         QStringLiteral("&Stillingar"),
+         QStringLiteral("&Viðbætur"),
+         QStringLiteral("&Þróun"),
+         QStringLiteral("&Próf"),
+         QStringLiteral("&Tungumál viðmóts"),
+         QStringLiteral("&Tungumál flokka")},
+        {Language::Norwegian,
+         QStringLiteral("&Fil"),
+         QStringLiteral("&Rediger"),
+         QStringLiteral("&Visning"),
+         QStringLiteral("&Innstillinger"),
+         QStringLiteral("&Plugins"),
+         QStringLiteral("&Utvikling"),
+         QStringLiteral("&Tester"),
+         QStringLiteral("&Grensesnittspråk"),
+         QStringLiteral("&Kategorispråk")},
+        {Language::Finnish,
+         QStringLiteral("&Tiedosto"),
+         QStringLiteral("&Muokkaa"),
+         QStringLiteral("&Näytä"),
+         QStringLiteral("&Asetukset"),
+         QStringLiteral("&Plugins"),
+         QStringLiteral("&Kehitys"),
+         QStringLiteral("&Testit"),
+         QStringLiteral("&Käyttöliittymän kieli"),
+         QStringLiteral("&Luokan kieli")},
+        {Language::Danish,
+         QStringLiteral("&Fil"),
+         QStringLiteral("&Rediger"),
+         QStringLiteral("&Visning"),
+         QStringLiteral("&Indstillinger"),
+         QStringLiteral("&Plugins"),
+         QStringLiteral("&Udvikling"),
+         QStringLiteral("&Tests"),
+         QStringLiteral("&Interface sprog"),
+         QStringLiteral("&Kategori sprog")},
         {Language::Spanish,
          QStringLiteral("&Archivo"),
          QStringLiteral("&Editar"),
@@ -159,7 +215,17 @@ TEST_CASE("Top-level menu titles are translated for all supported UI languages")
          QStringLiteral("&개발"),
          QStringLiteral("&테스트"),
          QStringLiteral("인터페이스 &언어"),
-         QStringLiteral("분류 &언어")}
+         QStringLiteral("분류 &언어")},
+        {Language::SimplifiedChinese,
+         QStringLiteral("&文件"),
+         QStringLiteral("&编辑"),
+         QStringLiteral("&视图"),
+         QStringLiteral("&设置"),
+         QStringLiteral("&插件"),
+         QStringLiteral("&开发"),
+         QStringLiteral("&测试"),
+         QStringLiteral("&界面语言"),
+         QStringLiteral("&类别语言")}
     };
 
     for (const auto& entry : expected) {
@@ -257,6 +323,46 @@ TEST_CASE("Settings menu actions are translated for all supported UI languages")
          QStringLiteral("Lingua delle &categorie"),
          QStringLiteral("Reimposta il comportamento appreso…"),
          QStringLiteral("Svuota cache…")},
+        {Language::Swedish,
+         QStringLiteral("Systemkompatibilitetskontroll…"),
+         QStringLiteral("&Välj LLM…"),
+         QStringLiteral("Hantera kategorivitlistor…"),
+         QStringLiteral("&Gränssnittsspråk"),
+         QStringLiteral("&Kategorispråk"),
+         QStringLiteral("Återställ inlärt beteende…"),
+         QStringLiteral("Rensa cacheminne…")},
+        {Language::Icelandic,
+         QStringLiteral("Athugun á samhæfni kerfis…"),
+         QStringLiteral("&Veldu LLM…"),
+         QStringLiteral("Stjórna undanþágulistum fyrir flokka…"),
+         QStringLiteral("&Tungumál viðmóts"),
+         QStringLiteral("&Tungumál flokka"),
+         QStringLiteral("Endurstilla lærða hegðun…"),
+         QStringLiteral("Hreinsa skyndiminni…")},
+        {Language::Norwegian,
+         QStringLiteral("Kontroll av systemkompatibilitet…"),
+         QStringLiteral("&Velg LLM…"),
+         QStringLiteral("Administrer kategorihvitelister …"),
+         QStringLiteral("&Grensesnittspråk"),
+         QStringLiteral("&Kategorispråk"),
+         QStringLiteral("Tilbakestill lært atferd…"),
+         QStringLiteral("Tøm bufferen …")},
+        {Language::Finnish,
+         QStringLiteral("Järjestelmän yhteensopivuuden tarkistus…"),
+         QStringLiteral("&Valitse LLM…"),
+         QStringLiteral("Hallinnoi sallittujen luokkien luetteloita…"),
+         QStringLiteral("&Käyttöliittymän kieli"),
+         QStringLiteral("&Luokan kieli"),
+         QStringLiteral("Nollaa opittu käyttäytyminen…"),
+         QStringLiteral("Tyhjennä välimuisti…")},
+        {Language::Danish,
+         QStringLiteral("Kontrol af systemkompatibilitet…"),
+         QStringLiteral("&Vælg LLM…"),
+         QStringLiteral("Administrer kategorihvidlister…"),
+         QStringLiteral("&Interface sprog"),
+         QStringLiteral("&Kategori sprog"),
+         QStringLiteral("Nulstil indlært adfærd…"),
+         QStringLiteral("Ryd cache…")},
         {Language::Spanish,
          QStringLiteral("Comprobación de compatibilidad del sistema…"),
          QStringLiteral("Seleccionar &LLM…"),
@@ -288,7 +394,15 @@ TEST_CASE("Settings menu actions are translated for all supported UI languages")
          QStringLiteral("인터페이스 &언어"),
          QStringLiteral("분류 &언어"),
          QStringLiteral("학습된 동작 재설정…"),
-         QStringLiteral("캐시 비우기…")}
+         QStringLiteral("캐시 비우기…")},
+        {Language::SimplifiedChinese,
+         QStringLiteral("系统兼容性检查…"),
+         QStringLiteral("&选择LLM…"),
+         QStringLiteral("管理类别白名单…"),
+         QStringLiteral("&界面语言"),
+         QStringLiteral("&类别语言"),
+         QStringLiteral("重置已学习的行为…"),
+         QStringLiteral("清除缓存…")}
     };
 
     for (const auto& entry : expected) {
@@ -407,6 +521,66 @@ TEST_CASE("Updater strings are translated for all supported UI languages") {
          QStringLiteral("Chiudi l'app e avvia il programma di installazione per aggiornare"),
          QStringLiteral("Chiudi e avvia il programma di installazione"),
          QStringLiteral("Novità della versione %1:")},
+        {Language::Swedish,
+         QStringLiteral("Uppdateringen misslyckades"),
+         QStringLiteral("Uppdatera manuellt"),
+         QStringLiteral("Det gick inte att förbereda installationsprogrammet för uppdateringen.\n%1"),
+         QStringLiteral("Installationsprogrammet kunde inte startas."),
+         QStringLiteral("Inget nedladdningsmål är tillgängligt för den här uppdateringen."),
+         QStringLiteral("Laddar ner uppdatering"),
+         QStringLiteral("Laddar ner installationsprogrammet för uppdateringen..."),
+         QStringLiteral("Installatör redo"),
+         QStringLiteral("Avsluta appen och starta installationsprogrammet för att uppdatera"),
+         QStringLiteral("Avsluta och starta installationsprogrammet"),
+         QStringLiteral("Vad är nytt i version %1:")},
+        {Language::Icelandic,
+         QStringLiteral("Uppfærsla mistókst"),
+         QStringLiteral("Uppfærðu handvirkt"),
+         QStringLiteral("Mistókst að undirbúa uppsetningarforritið.\n%1"),
+         QStringLiteral("Ekki var hægt að ræsa uppsetningarforritið."),
+         QStringLiteral("Ekkert niðurhalsmarkmið er í boði fyrir þessa uppfærslu."),
+         QStringLiteral("Að sækja uppfærslu"),
+         QStringLiteral("Hleður niður uppsetningarforritinu..."),
+         QStringLiteral("Uppsetningarforrit tilbúið"),
+         QStringLiteral("Slepptu forritinu og ræstu uppsetningarforritið til að uppfæra"),
+         QStringLiteral("Hætta og ræstu uppsetningarforritið"),
+         QStringLiteral("Hvað er nýtt í útgáfu %1:")},
+        {Language::Norwegian,
+         QStringLiteral("Oppdatering mislyktes"),
+         QStringLiteral("Oppdater manuelt"),
+         QStringLiteral("Kunne ikke klargjøre installasjonsprogrammet for oppdateringen.\n%1"),
+         QStringLiteral("Installasjonsprogrammet kunne ikke startes."),
+         QStringLiteral("Ingen nedlastingsmål er tilgjengelig for denne oppdateringen."),
+         QStringLiteral("Laster ned oppdatering"),
+         QStringLiteral("Laster ned oppdateringsinstallasjonsprogrammet..."),
+         QStringLiteral("Installatør klar"),
+         QStringLiteral("Avslutt appen og start installasjonsprogrammet for å oppdatere"),
+         QStringLiteral("Avslutt og start installasjonsprogrammet"),
+         QStringLiteral("Hva er nytt i versjon %1:")},
+        {Language::Finnish,
+         QStringLiteral("Päivitys epäonnistui"),
+         QStringLiteral("Päivitä manuaalisesti"),
+         QStringLiteral("Päivityksen asennusohjelman valmistelu epäonnistui.\n%1"),
+         QStringLiteral("Asennusohjelmaa ei voitu käynnistää."),
+         QStringLiteral("Tälle päivitykselle ei ole saatavilla latauskohdetta."),
+         QStringLiteral("Ladataan päivitystä"),
+         QStringLiteral("Ladataan päivityksen asennusohjelmaa..."),
+         QStringLiteral("Asennusvalmis"),
+         QStringLiteral("Lopeta sovellus ja käynnistä asennusohjelma päivittääksesi"),
+         QStringLiteral("Lopeta ja käynnistä asennusohjelma"),
+         QStringLiteral("Mitä uutta versiossa %1:")},
+        {Language::Danish,
+         QStringLiteral("Opdatering mislykkedes"),
+         QStringLiteral("Opdater manuelt"),
+         QStringLiteral("Kunne ikke forberede opdateringsinstallationsprogrammet.\n%1"),
+         QStringLiteral("Installationsprogrammet kunne ikke startes."),
+         QStringLiteral("Intet downloadmål er tilgængeligt for denne opdatering."),
+         QStringLiteral("Downloader opdatering"),
+         QStringLiteral("Downloader opdateringsinstallationsprogrammet..."),
+         QStringLiteral("Installatør klar"),
+         QStringLiteral("Afslut appen og start installationsprogrammet for at opdatere"),
+         QStringLiteral("Afslut og start installationsprogrammet"),
+         QStringLiteral("Hvad er nyt i version %1:")},
         {Language::Spanish,
          QStringLiteral("La actualización falló"),
          QStringLiteral("Actualizar manualmente"),
@@ -454,7 +628,19 @@ TEST_CASE("Updater strings are translated for all supported UI languages") {
          QStringLiteral("설치 프로그램 준비 완료"),
          QStringLiteral("업데이트하려면 앱을 종료하고 설치 프로그램을 실행하세요"),
          QStringLiteral("종료 후 설치 프로그램 실행"),
-         QStringLiteral("%1 버전의 새로운 기능:")}
+         QStringLiteral("%1 버전의 새로운 기능:")},
+        {Language::SimplifiedChinese,
+         QStringLiteral("更新失败"),
+         QStringLiteral("手动更新"),
+         QStringLiteral("无法准备更新安装程序。\n%1"),
+         QStringLiteral("安装程序无法启动。"),
+         QStringLiteral("此更新没有可用的下载目标。"),
+         QStringLiteral("下载更新"),
+         QStringLiteral("正在下载更新安装程序..."),
+         QStringLiteral("安装程序已就绪"),
+         QStringLiteral("退出应用程序并启动安装程序进行更新"),
+         QStringLiteral("退出并启动安装程序"),
+         QStringLiteral("版本 %1 中的新增内容：")}
     };
 
     for (const auto& entry : expected) {
@@ -527,6 +713,147 @@ TEST_CASE("Quick Start guide content follows the selected app language")
         TranslationManager::instance().current_language());
     REQUIRE(hindi.contains(QStringLiteral("# त्वरित प्रारंभ मार्गदर्शिका")));
     REQUIRE(hindi.contains(QStringLiteral("फ़ोल्डर चुनें")));
+
+    TranslationManager::instance().set_language(Language::Swedish);
+    const QString swedish = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(swedish.contains(QStringLiteral("# Snabbstartguide")));
+    REQUIRE(swedish.contains(QStringLiteral("Valj en mapp")));
+
+    TranslationManager::instance().set_language(Language::Icelandic);
+    const QString icelandic = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(icelandic.contains(QStringLiteral("# Flytileidarvisir")));
+    REQUIRE(icelandic.contains(QStringLiteral("Veldu moppu")));
+
+    TranslationManager::instance().set_language(Language::Norwegian);
+    const QString norwegian = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(norwegian.contains(QStringLiteral("# Hurtigstartguide")));
+    REQUIRE(norwegian.contains(QStringLiteral("Velg en mappe")));
+
+    TranslationManager::instance().set_language(Language::Finnish);
+    const QString finnish = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(finnish.contains(QStringLiteral("# Pika-aloitusopas")));
+    REQUIRE(finnish.contains(QStringLiteral("Valitse kansio")));
+
+    TranslationManager::instance().set_language(Language::Danish);
+    const QString danish = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(danish.contains(QStringLiteral("# Hurtig startvejledning")));
+    REQUIRE(danish.contains(QStringLiteral("Vaelg en mappe")));
+
+    TranslationManager::instance().set_language(Language::SimplifiedChinese);
+    const QString simplified_chinese = MainAppHelpActions::quick_start_markdown_for_language(
+        TranslationManager::instance().current_language());
+    REQUIRE(simplified_chinese.contains(QStringLiteral("# 快速入门指南")));
+    REQUIRE(simplified_chinese.contains(QStringLiteral("选择一个文件夹")));
+}
+
+TEST_CASE("Interface language action labels are translated for the newly added Nordic UI languages")
+{
+    EnvVarGuard platform_guard("QT_QPA_PLATFORM", "offscreen");
+    QtAppContext qt_context;
+
+    struct ExpectedTranslation {
+        Language language;
+        QString swedish;
+        QString icelandic;
+        QString norwegian;
+        QString finnish;
+        QString danish;
+    };
+
+    const std::vector<ExpectedTranslation> expected = {
+        {Language::Swedish,
+         QStringLiteral("&svenska"),
+         QStringLiteral("&isländska"),
+         QStringLiteral("&norska"),
+         QStringLiteral("&finska"),
+         QStringLiteral("&danska")},
+        {Language::Icelandic,
+         QStringLiteral("&sænsku"),
+         QStringLiteral("&íslenskur"),
+         QStringLiteral("&norska"),
+         QStringLiteral("&finnska"),
+         QStringLiteral("&danska")},
+        {Language::Norwegian,
+         QStringLiteral("&svensk"),
+         QStringLiteral("&islandsk"),
+         QStringLiteral("&norsk"),
+         QStringLiteral("&finsk"),
+         QStringLiteral("&dansk")},
+        {Language::Finnish,
+         QStringLiteral("&ruotsinkielinen"),
+         QStringLiteral("&islantilainen"),
+         QStringLiteral("&norjalainen"),
+         QStringLiteral("&suomalainen"),
+         QStringLiteral("&tanskalainen")},
+        {Language::Danish,
+         QStringLiteral("&svensk"),
+         QStringLiteral("&islandsk"),
+         QStringLiteral("&norsk"),
+         QStringLiteral("&finsk"),
+         QStringLiteral("&dansk")}
+    };
+
+    for (const auto& entry : expected) {
+        TranslationManager::instance().set_language(entry.language);
+
+        const auto swedish = QCoreApplication::translate("UiTranslator", "&Swedish");
+        const auto icelandic = QCoreApplication::translate("UiTranslator", "&Icelandic");
+        const auto norwegian = QCoreApplication::translate("UiTranslator", "&Norwegian");
+        const auto finnish = QCoreApplication::translate("UiTranslator", "&Finnish");
+        const auto danish = QCoreApplication::translate("UiTranslator", "&Danish");
+
+        CAPTURE(static_cast<int>(entry.language), swedish, icelandic, norwegian, finnish, danish);
+
+        REQUIRE(swedish == entry.swedish);
+        REQUIRE(icelandic == entry.icelandic);
+        REQUIRE(norwegian == entry.norwegian);
+        REQUIRE(finnish == entry.finnish);
+        REQUIRE(danish == entry.danish);
+    }
+}
+
+TEST_CASE("Simplified Chinese interface language action label is translated for all supported UI languages")
+{
+    EnvVarGuard platform_guard("QT_QPA_PLATFORM", "offscreen");
+    QtAppContext qt_context;
+
+    struct ExpectedTranslation {
+        Language language;
+        QString simplified_chinese;
+    };
+
+    const std::vector<ExpectedTranslation> expected = {
+        {Language::English, QStringLiteral("&Simplified Chinese")},
+        {Language::French, QStringLiteral("&Chinois simplifié")},
+        {Language::German, QStringLiteral("&Vereinfachtes Chinesisch")},
+        {Language::Hindi, QStringLiteral("&सरलीकृत चीनी")},
+        {Language::Italian, QStringLiteral("&Cinese semplificato")},
+        {Language::Swedish, QStringLiteral("&Förenklad kinesiska")},
+        {Language::Icelandic, QStringLiteral("&Einfölduð kínverska")},
+        {Language::Norwegian, QStringLiteral("&Forenklet kinesisk")},
+        {Language::Finnish, QStringLiteral("&Yksinkertaistettu kiina")},
+        {Language::Danish, QStringLiteral("&Forenklet kinesisk")},
+        {Language::Spanish, QStringLiteral("&Chino simplificado")},
+        {Language::Dutch, QStringLiteral("&Vereenvoudigd Chinees")},
+        {Language::Turkish, QStringLiteral("&Basitleştirilmiş Çince")},
+        {Language::Korean, QStringLiteral("&중국어 간체")},
+        {Language::SimplifiedChinese, QStringLiteral("&简体中文")}
+    };
+
+    for (const auto& entry : expected) {
+        TranslationManager::instance().set_language(entry.language);
+
+        const auto simplified_chinese =
+            QCoreApplication::translate("UiTranslator", "&Simplified Chinese");
+
+        CAPTURE(static_cast<int>(entry.language), simplified_chinese);
+        REQUIRE(simplified_chinese == entry.simplified_chinese);
+    }
 }
 
 TEST_CASE("Quick Start and FAQ help labels are translated for all supported UI languages")
@@ -562,6 +889,26 @@ TEST_CASE("Quick Start and FAQ help labels are translated for all supported UI l
          QStringLiteral("&Guida rapida"),
          QStringLiteral("&FAQ"),
          QStringLiteral("Guida rapida")},
+        {Language::Swedish,
+         QStringLiteral("&Snabbstartguide"),
+         QStringLiteral("&FAQ"),
+         QStringLiteral("Snabbstartguide")},
+        {Language::Icelandic,
+         QStringLiteral("&Flýtileiðarvísir"),
+         QStringLiteral("&Algengar spurningar"),
+         QStringLiteral("Flýtileiðarvísir")},
+        {Language::Norwegian,
+         QStringLiteral("&Hurtigstartguide"),
+         QStringLiteral("&FAQ"),
+         QStringLiteral("Hurtigstartguide")},
+        {Language::Finnish,
+         QStringLiteral("&Pika-aloitusopas"),
+         QStringLiteral("&FAQ"),
+         QStringLiteral("Pika-aloitusopas")},
+        {Language::Danish,
+         QStringLiteral("&Hurtig startvejledning"),
+         QStringLiteral("&FAQ"),
+         QStringLiteral("Hurtig startvejledning")},
         {Language::Spanish,
          QStringLiteral("&Guía de inicio rápido"),
          QStringLiteral("&FAQ"),
@@ -577,7 +924,11 @@ TEST_CASE("Quick Start and FAQ help labels are translated for all supported UI l
         {Language::Korean,
          QStringLiteral("&빠른 시작 가이드"),
          QStringLiteral("&FAQ"),
-         QStringLiteral("빠른 시작 가이드")}
+         QStringLiteral("빠른 시작 가이드")},
+        {Language::SimplifiedChinese,
+         QStringLiteral("&快速入门指南"),
+         QStringLiteral("&FAQ"),
+         QStringLiteral("快速入门指南")}
     };
 
     for (const auto& entry : expected) {

@@ -2286,6 +2286,66 @@ Veuillez mettre à jour pour continuer. Si vous choisissez de quitter, l&apos;ap
         <source>&amp;Korean</source>
         <translation>&amp;Coréen</translation>
     </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Swedish</source>
+
+        <translation>&amp;suédois</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="70"/>
+
+        <source>&amp;Icelandic</source>
+
+        <translation>&amp;islandais</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="71"/>
+
+        <source>&amp;Norwegian</source>
+
+        <translation>&amp;norvégien</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="72"/>
+
+        <source>&amp;Finnish</source>
+
+        <translation>&amp;finlandais</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="73"/>
+
+        <source>&amp;Danish</source>
+
+        <translation>&amp;danois</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Simplified Chinese</source>
+
+        <translation>&amp;Chinois simplifié</translation>
+
+    </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="72"/>
         <source>Dutch</source>

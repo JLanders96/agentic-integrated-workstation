@@ -2286,6 +2286,66 @@ Devam etmek için lütfen güncelleyin. Çıkmayı seçerseniz uygulama kapanaca
         <source>&amp;Korean</source>
         <translation>&amp;Korece</translation>
     </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Swedish</source>
+
+        <translation>&amp;İsveççe</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="70"/>
+
+        <source>&amp;Icelandic</source>
+
+        <translation>&amp;İzlandaca</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="71"/>
+
+        <source>&amp;Norwegian</source>
+
+        <translation>&amp;Norveççe</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="72"/>
+
+        <source>&amp;Finnish</source>
+
+        <translation>&amp;Fince</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="73"/>
+
+        <source>&amp;Danish</source>
+
+        <translation>&amp;Danimarka</translation>
+
+    </message>
+
+    <message>
+
+        <location filename="../../lib/UiTranslator.cpp" line="69"/>
+
+        <source>&amp;Simplified Chinese</source>
+
+        <translation>&amp;Basitleştirilmiş Çince</translation>
+
+    </message>
     <message>
         <location filename="../../lib/UiTranslator.cpp" line="72"/>
         <source>Dutch</source>

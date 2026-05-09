@@ -16,6 +16,11 @@ std::vector<LanguageInfo> build_languages()
     return {
         {Language::English, QStringLiteral("en"), QStringLiteral("English"), QString()},
         {Language::Dutch, QStringLiteral("nl"), QStringLiteral("Dutch"), QStringLiteral(":/i18n/aifilesorter_nl.qm")},
+        {Language::Swedish, QStringLiteral("sv"), QStringLiteral("Swedish"), QStringLiteral(":/i18n/aifilesorter_sv.qm")},
+        {Language::Icelandic, QStringLiteral("is"), QStringLiteral("Icelandic"), QStringLiteral(":/i18n/aifilesorter_is.qm")},
+        {Language::Norwegian, QStringLiteral("nb"), QStringLiteral("Norwegian"), QStringLiteral(":/i18n/aifilesorter_nb.qm")},
+        {Language::Finnish, QStringLiteral("fi"), QStringLiteral("Finnish"), QStringLiteral(":/i18n/aifilesorter_fi.qm")},
+        {Language::Danish, QStringLiteral("da"), QStringLiteral("Danish"), QStringLiteral(":/i18n/aifilesorter_da.qm")},
         {Language::French, QStringLiteral("fr"), QStringLiteral("French"), QStringLiteral(":/i18n/aifilesorter_fr.qm")},
         {Language::German, QStringLiteral("de"), QStringLiteral("German"), QStringLiteral(":/i18n/aifilesorter_de.qm")},
         {Language::Hindi, QStringLiteral("hi"), QStringLiteral("Hindi"), QStringLiteral(":/i18n/aifilesorter_hi.qm")},
@@ -23,6 +28,7 @@ std::vector<LanguageInfo> build_languages()
         {Language::Spanish, QStringLiteral("es"), QStringLiteral("Spanish"), QStringLiteral(":/i18n/aifilesorter_es.qm")},
         {Language::Turkish, QStringLiteral("tr"), QStringLiteral("Turkish"), QStringLiteral(":/i18n/aifilesorter_tr.qm")},
         {Language::Korean, QStringLiteral("ko"), QStringLiteral("Korean"), QStringLiteral(":/i18n/aifilesorter_ko.qm")},
+        {Language::SimplifiedChinese, QStringLiteral("zh-CN"), QStringLiteral("Simplified Chinese"), QStringLiteral(":/i18n/aifilesorter_zh_cn.qm")},
     };
 }
 

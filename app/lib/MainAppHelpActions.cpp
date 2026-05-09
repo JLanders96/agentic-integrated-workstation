@@ -42,6 +42,16 @@ QString quick_start_resource_path(Language language)
     switch (language) {
     case Language::Dutch:
         return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_nl.md");
+    case Language::Swedish:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_sv.md");
+    case Language::Icelandic:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_is.md");
+    case Language::Norwegian:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_nb.md");
+    case Language::Finnish:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_fi.md");
+    case Language::Danish:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_da.md");
     case Language::French:
         return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_fr.md");
     case Language::German:
@@ -56,6 +66,8 @@ QString quick_start_resource_path(Language language)
         return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_tr.md");
     case Language::Korean:
         return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_ko.md");
+    case Language::SimplifiedChinese:
+        return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start_zh_cn.md");
     case Language::English:
     default:
         return QStringLiteral(":/net/quicknode/AIFileSorter/help/quick_start.md");

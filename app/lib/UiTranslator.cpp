@@ -66,6 +66,13 @@ constexpr auto kActionFrench = QT_TRANSLATE_NOOP("UiTranslator", "&French");
 constexpr auto kActionGerman = QT_TRANSLATE_NOOP("UiTranslator", "&German");
 constexpr auto kActionHindi = QT_TRANSLATE_NOOP("UiTranslator", "&Hindi");
 constexpr auto kActionItalian = QT_TRANSLATE_NOOP("UiTranslator", "&Italian");
+constexpr auto kActionSimplifiedChinese =
+    QT_TRANSLATE_NOOP("UiTranslator", "&Simplified Chinese");
+constexpr auto kActionSwedish = QT_TRANSLATE_NOOP("UiTranslator", "&Swedish");
+constexpr auto kActionIcelandic = QT_TRANSLATE_NOOP("UiTranslator", "&Icelandic");
+constexpr auto kActionNorwegian = QT_TRANSLATE_NOOP("UiTranslator", "&Norwegian");
+constexpr auto kActionFinnish = QT_TRANSLATE_NOOP("UiTranslator", "&Finnish");
+constexpr auto kActionDanish = QT_TRANSLATE_NOOP("UiTranslator", "&Danish");
 constexpr auto kActionSpanish = QT_TRANSLATE_NOOP("UiTranslator", "&Spanish");
 constexpr auto kActionTurkish = QT_TRANSLATE_NOOP("UiTranslator", "&Turkish");
 constexpr auto kActionKorean = QT_TRANSLATE_NOOP("UiTranslator", "&Korean");
@@ -313,6 +320,12 @@ void UiTranslator::translate_menus_and_actions() const
         {deps_.actions.german_action, kActionGerman},
         {deps_.actions.hindi_action, kActionHindi},
         {deps_.actions.italian_action, kActionItalian},
+        {deps_.actions.simplified_chinese_action, kActionSimplifiedChinese},
+        {deps_.actions.swedish_action, kActionSwedish},
+        {deps_.actions.icelandic_action, kActionIcelandic},
+        {deps_.actions.norwegian_action, kActionNorwegian},
+        {deps_.actions.finnish_action, kActionFinnish},
+        {deps_.actions.danish_action, kActionDanish},
         {deps_.actions.spanish_action, kActionSpanish},
         {deps_.actions.turkish_action, kActionTurkish},
         {deps_.actions.korean_action, kActionKorean},
@@ -402,6 +415,25 @@ void UiTranslator::update_language_group_checks(Language configured) const
     }
     if (deps_.language.italian_action) {
         deps_.language.italian_action->setChecked(configured == Language::Italian);
+    }
+    if (deps_.language.simplified_chinese_action) {
+        deps_.language.simplified_chinese_action->setChecked(
+            configured == Language::SimplifiedChinese);
+    }
+    if (deps_.language.swedish_action) {
+        deps_.language.swedish_action->setChecked(configured == Language::Swedish);
+    }
+    if (deps_.language.icelandic_action) {
+        deps_.language.icelandic_action->setChecked(configured == Language::Icelandic);
+    }
+    if (deps_.language.norwegian_action) {
+        deps_.language.norwegian_action->setChecked(configured == Language::Norwegian);
+    }
+    if (deps_.language.finnish_action) {
+        deps_.language.finnish_action->setChecked(configured == Language::Finnish);
+    }
+    if (deps_.language.danish_action) {
+        deps_.language.danish_action->setChecked(configured == Language::Danish);
     }
     if (deps_.language.spanish_action) {
         deps_.language.spanish_action->setChecked(configured == Language::Spanish);

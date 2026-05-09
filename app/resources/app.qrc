@@ -6,6 +6,12 @@
     <file>images/icon_512x512.png</file>
     <file>help/quick_start.md</file>
     <file>help/quick_start_nl.md</file>
+    <file>help/quick_start_zh_cn.md</file>
+    <file>help/quick_start_sv.md</file>
+    <file>help/quick_start_is.md</file>
+    <file>help/quick_start_nb.md</file>
+    <file>help/quick_start_fi.md</file>
+    <file>help/quick_start_da.md</file>
     <file>help/quick_start_fr.md</file>
     <file>help/quick_start_de.md</file>
     <file>help/quick_start_hi.md</file>

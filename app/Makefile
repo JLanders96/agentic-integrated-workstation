@@ -392,6 +392,12 @@ TS_FILES := \
 	$(TS_DIR)/aifilesorter_it.ts \
 	$(TS_DIR)/aifilesorter_es.ts \
 	$(TS_DIR)/aifilesorter_nl.ts \
+	$(TS_DIR)/aifilesorter_zh_cn.ts \
+	$(TS_DIR)/aifilesorter_sv.ts \
+	$(TS_DIR)/aifilesorter_is.ts \
+	$(TS_DIR)/aifilesorter_nb.ts \
+	$(TS_DIR)/aifilesorter_fi.ts \
+	$(TS_DIR)/aifilesorter_da.ts \
 	$(TS_DIR)/aifilesorter_tr.ts \
 	$(TS_DIR)/aifilesorter_ko.ts
 QM_DIR := $(OBJ_DIR)/i18n

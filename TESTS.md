@@ -1251,21 +1251,21 @@ Purpose: Validate that main window labels update for all supported UI languages.
 Setup: Construct `MainApp` with a settings object and a translation manager.
 Procedure: Iterate through supported languages, set the language, trigger a retranslate, and read the analyze button and folder label text.
 Expected outcome: Each language produces the exact expected translations for the two labels.
-This now explicitly includes Hindi.
+This now explicitly includes Hindi, Swedish, Icelandic, Norwegian, Finnish, Danish, and Simplified Chinese.
 Run: `./build-tests/ai_file_sorter_tests "MainApp retranslate reflects language changes"`
 
 #### Test case: Top-level menu titles are translated for all supported UI languages
 Purpose: Verify the main menu-bar labels are covered by the translation catalogs for every shipped interface language.
 Setup: Iterate all supported UI languages through the translation manager.
 Procedure: Translate the `UiTranslator` menu titles for File, Edit, View, Settings, Plugins, Development, Tests, Interface language, and Category language through `QCoreApplication::translate(...)`.
-Expected outcome: Each supported language returns the exact expected localized menu labels, including the Hindi `Edit` and `View` entries.
+Expected outcome: Each supported language returns the exact expected localized menu labels, including the Hindi entries, the newly added Nordic UI languages, and Simplified Chinese.
 Run: `./build-tests/ai_file_sorter_tests "Top-level menu titles are translated for all supported UI languages"`
 
 #### Test case: Settings menu actions are translated for all supported UI languages
 Purpose: Verify the visible Settings-menu action labels are localized rather than falling back to English source text.
 Setup: Iterate all supported UI languages through the translation manager.
 Procedure: Translate `System compatibility check…`, `Select &LLM…`, `Manage category whitelists…`, `Interface &language`, `Category &language`, `Reset learned behavior…`, and `Clear cache…` through `QCoreApplication::translate(...)`.
-Expected outcome: Each supported language returns the expected localized action labels, including the Hindi entries shown in the Settings menu.
+Expected outcome: Each supported language returns the expected localized action labels, including the Hindi entries, the newly added Nordic UI languages, and Simplified Chinese shown in the Settings menu.
 Run: `./build-tests/ai_file_sorter_tests "Settings menu actions are translated for all supported UI languages"`
 
 #### Test case: Updater strings are translated for all supported UI languages
@@ -1273,15 +1273,29 @@ Purpose: Verify updater and installer UI text exists across supported languages.
 Setup: Iterate the supported UI languages through the translation manager.
 Procedure: Read translated updater labels, errors, progress strings, and changelog headings.
 Expected outcome: Each supported language returns the expected localized updater strings.
-This now explicitly includes Hindi.
+This now explicitly includes Hindi, Swedish, Icelandic, Norwegian, Finnish, Danish, and Simplified Chinese.
 Run: `./build-tests/ai_file_sorter_tests "Updater strings are translated for all supported UI languages"`
 
 #### Test case: Quick Start guide content follows the selected app language
 Purpose: Ensure the local Quick Start guide body follows the active app language.
-Setup: Set the translation manager to English, French, Korean, and Hindi.
+Setup: Set the translation manager to English, French, Korean, Hindi, Swedish, Icelandic, Norwegian, Finnish, Danish, and Simplified Chinese.
 Procedure: Resolve the Quick Start markdown for each selected language.
 Expected outcome: Each language loads the matching localized markdown content instead of the English fallback when a translation exists.
 Run: `./build-tests/ai_file_sorter_tests "Quick Start guide content follows the selected app language"`
+
+#### Test case: Interface language action labels are translated for the newly added Nordic UI languages
+Purpose: Verify the new interface-language menu entries (`&Swedish`, `&Icelandic`, `&Norwegian`, `&Finnish`, and `&Danish`) are present in the translation catalogs and render localized labels.
+Setup: Iterate the newly added Nordic UI languages through the translation manager.
+Procedure: Translate the five new interface-language action labels through the `UiTranslator` context.
+Expected outcome: Each newly added Nordic UI language returns the exact expected localized menu labels for all five new language actions.
+Run: `./build-tests/ai_file_sorter_tests "Interface language action labels are translated for the newly added Nordic UI languages"`
+
+#### Test case: Simplified Chinese interface language action label is translated for all supported UI languages
+Purpose: Verify the `&Simplified Chinese` interface-language menu entry is present in every shipped translation catalog and does not fall back to English.
+Setup: Iterate all supported UI languages through the translation manager.
+Procedure: Translate `&Simplified Chinese` through the `UiTranslator` context.
+Expected outcome: Every supported UI language returns the exact expected localized label for the Simplified Chinese menu action.
+Run: `./build-tests/ai_file_sorter_tests "Simplified Chinese interface language action label is translated for all supported UI languages"`
 
 #### Test case: Quick Start and FAQ help labels are translated for all supported UI languages
 Purpose: Verify Help menu labels and the Quick Start dialog title are covered by translation catalogs.
@@ -1294,7 +1308,7 @@ Run: `./build-tests/ai_file_sorter_tests "Quick Start and FAQ help labels are tr
 
 #### Translation catalog sync check
 Purpose: Ensure the committed `.ts` catalogs do not miss any currently used GUI source strings.
-Setup: Create temporary copies of all supported UI language catalogs, including Hindi, and locate Qt 6 `lupdate`/`lrelease`.
+Setup: Create temporary copies of all supported UI language catalogs, including Hindi, Swedish, Icelandic, Norwegian, Finnish, Danish, and Simplified Chinese, and locate Qt 6 `lupdate`/`lrelease`.
 Procedure: Run `lupdate` against `app/startapp_windows.cpp`, `app/lib/*.cpp`, and `app/include/*.hpp`, then scan the temporary catalogs for newly introduced `unfinished` entries.
 Expected outcome: No temporary catalog contains unfinished entries, which means the source tree and translation catalogs are in sync.
 Run: `./tests/run_translation_tests.sh`

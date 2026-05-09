@@ -423,6 +423,12 @@ private:
     QAction* german_action{nullptr};
     QAction* hindi_action{nullptr};
     QAction* italian_action{nullptr};
+    QAction* simplified_chinese_action{nullptr};
+    QAction* swedish_action{nullptr};
+    QAction* icelandic_action{nullptr};
+    QAction* norwegian_action{nullptr};
+    QAction* finnish_action{nullptr};
+    QAction* danish_action{nullptr};
     QAction* spanish_action{nullptr};
     QAction* turkish_action{nullptr};
     QAction* korean_action{nullptr};

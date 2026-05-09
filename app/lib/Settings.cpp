@@ -177,11 +177,25 @@ std::string normalize_visual_model_id(const std::string& value)
 
 Language system_default_language()
 {
-    switch (QLocale::system().language()) {
+    const QLocale locale = QLocale::system();
+    switch (locale.language()) {
+        case QLocale::Chinese:
+            if (locale.script() == QLocale::SimplifiedHanScript
+                || locale.territory() == QLocale::China
+                || locale.territory() == QLocale::Singapore) {
+                return Language::SimplifiedChinese;
+            }
+            return Language::English;
+        case QLocale::Danish: return Language::Danish;
+        case QLocale::Finnish: return Language::Finnish;
         case QLocale::French: return Language::French;
         case QLocale::German: return Language::German;
         case QLocale::Hindi: return Language::Hindi;
+        case QLocale::Icelandic: return Language::Icelandic;
         case QLocale::Italian: return Language::Italian;
+        case QLocale::NorwegianBokmal: return Language::Norwegian;
+        case QLocale::NorwegianNynorsk: return Language::Norwegian;
+        case QLocale::Swedish: return Language::Swedish;
         case QLocale::Spanish: return Language::Spanish;
         case QLocale::Turkish: return Language::Turkish;
         case QLocale::Korean: return Language::Korean;

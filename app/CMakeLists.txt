@@ -496,6 +496,12 @@ set(AIFS_TRANSLATION_TS_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_it.ts"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_es.ts"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_nl.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_zh_cn.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_sv.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_is.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_nb.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_fi.ts"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_da.ts"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_tr.ts"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/i18n/aifilesorter_ko.ts"
 )
@@ -558,6 +564,12 @@ set(APP_RESOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/images/icon_512x512.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_nl.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_zh_cn.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_sv.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_is.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_nb.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_fi.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_da.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_fr.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_de.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_hi.md"
@@ -595,6 +607,30 @@ set_source_files_properties(
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_nl.md"
     PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_nl.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_zh_cn.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_zh_cn.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_sv.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_sv.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_is.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_is.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_nb.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_nb.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_fi.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_fi.md"
+)
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_da.md"
+    PROPERTIES QT_RESOURCE_ALIAS "help/quick_start_da.md"
 )
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/help/quick_start_fr.md"
