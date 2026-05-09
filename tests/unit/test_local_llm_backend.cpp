@@ -191,6 +191,20 @@ TEST_CASE("CUDA backend can be forced off via GGML_DISABLE_CUDA") {
     REQUIRE(params.n_gpu_layers == 0);
 }
 
+TEST_CASE("LocalLLMClient builds a descending GPU-layer retry ladder from optimistic and conservative estimates") {
+    const auto candidates =
+        LocalLLMTestAccess::gpu_layer_retry_candidates_for_testing(20, 15);
+
+    REQUIRE(candidates == std::vector<int>{20, 15, 11, 8, 6, 4, 3, 2, 1});
+}
+
+TEST_CASE("LocalLLMClient deduplicates matching retry estimates before reducing GPU layers") {
+    const auto candidates =
+        LocalLLMTestAccess::gpu_layer_retry_candidates_for_testing(15, 15);
+
+    REQUIRE(candidates == std::vector<int>{15, 11, 8, 6, 4, 3, 2, 1});
+}
+
 TEST_CASE("CUDA override is applied when backend is available") {
     TempModelFile model;
     EnvVarGuard backend("AI_FILE_SORTER_GPU_BACKEND", "cuda");

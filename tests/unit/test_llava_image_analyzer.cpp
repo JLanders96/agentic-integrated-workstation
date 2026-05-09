@@ -33,6 +33,22 @@ TEST_CASE("LlavaImageAnalyzer uses conservative default visual batch sizing") {
 #endif
 }
 
+TEST_CASE("LlavaImageAnalyzer builds a descending visual GPU-layer retry ladder") {
+    const std::vector<int32_t> actual =
+        LlavaImageAnalyzerTestAccess::visual_gpu_layer_retry_candidates(20);
+    const std::vector<int32_t> expected = {20, 15, 11, 8, 6, 4, 3, 2, 1};
+
+    CHECK(actual == expected);
+}
+
+TEST_CASE("LlavaImageAnalyzer keeps a single visual GPU-layer retry candidate at one layer") {
+    const std::vector<int32_t> actual =
+        LlavaImageAnalyzerTestAccess::visual_gpu_layer_retry_candidates(1);
+    const std::vector<int32_t> expected = {1};
+
+    CHECK(actual == expected);
+}
+
 TEST_CASE("LlavaImageAnalyzer keeps guarded visual projectors on CPU when headroom is tight") {
     constexpr std::uintmax_t mmproj_size = 624451168ULL;
     constexpr size_t tight_free = 1024ULL * 1024ULL * 1024ULL;

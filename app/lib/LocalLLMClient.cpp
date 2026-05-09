@@ -139,6 +139,9 @@ constexpr double kCudaMinApproxFreeBudgetFraction = 0.45;
 constexpr double kCudaLayerOverheadFactor = 1.08;
 constexpr float kDefaultMinPSampler = 0.05f;
 constexpr float kDefaultTemperatureSampler = 0.8f;
+constexpr int kGpuLayerRetryScaleNumerator = 3;
+constexpr int kGpuLayerRetryScaleDenominator = 4;
+constexpr int kMinimumGpuLayerRetryCount = 1;
 constexpr double kMinimumMetalSafetyReserveBytes = 512.0 * kBytesPerMiB;
 constexpr double kMinimumCudaSafetyReserveBytes = 192.0 * kBytesPerMiB;
 constexpr size_t kIntegratedGpuMemoryCapBytes =
@@ -2193,10 +2196,66 @@ bool apply_ngl_override(int override_layers,
 }
 
 struct NglEstimationResult {
+    int estimator_layers{0};
     int candidate_layers{0};
     int heuristic_layers{0};
     bool low_memory{false};
 };
+
+void append_unique_positive_retry_layers(std::vector<int>& candidates, int layers)
+{
+    if (layers <= 0 ||
+        std::find(candidates.begin(), candidates.end(), layers) != candidates.end()) {
+        return;
+    }
+    candidates.push_back(layers);
+}
+
+int conservative_retry_layers(int estimator_layers,
+                              int heuristic_layers,
+                              int optimistic_layers)
+{
+    if (estimator_layers > 0 && heuristic_layers > 0) {
+        return std::min(estimator_layers, heuristic_layers);
+    }
+    if (estimator_layers > 0) {
+        return estimator_layers;
+    }
+    if (heuristic_layers > 0) {
+        return heuristic_layers;
+    }
+    return optimistic_layers;
+}
+
+int reduced_retry_layers(int current_layers)
+{
+    if (current_layers <= kMinimumGpuLayerRetryCount) {
+        return 0;
+    }
+
+    int reduced =
+        (current_layers * kGpuLayerRetryScaleNumerator) / kGpuLayerRetryScaleDenominator;
+    if (reduced >= current_layers) {
+        reduced = current_layers - 1;
+    }
+    return std::max(reduced, kMinimumGpuLayerRetryCount);
+}
+
+std::vector<int> build_gpu_layer_retry_candidates(int optimistic_layers,
+                                                  int conservative_layers)
+{
+    std::vector<int> candidates;
+    append_unique_positive_retry_layers(candidates, optimistic_layers);
+    append_unique_positive_retry_layers(candidates, conservative_layers);
+
+    int current_layers = candidates.empty() ? 0 : candidates.back();
+    while (current_layers > kMinimumGpuLayerRetryCount) {
+        current_layers = reduced_retry_layers(current_layers);
+        append_unique_positive_retry_layers(candidates, current_layers);
+    }
+
+    return candidates;
+}
 
 NglEstimationResult estimate_ngl_from_cuda_info(const std::string& model_path,
                                                const std::shared_ptr<spdlog::logger>& logger)
@@ -2213,6 +2272,7 @@ NglEstimationResult estimate_ngl_from_cuda_info(const std::string& model_path,
     }
 
     estimation = estimate_gpu_layers_for_cuda(model_path, *cuda_info);
+    result.estimator_layers = std::max(estimation.layers, 0);
     result.heuristic_layers = Utils::compute_ngl_from_cuda_memory(*cuda_info);
 
     int candidate_layers = estimation.layers > 0 ? estimation.layers : 0;
@@ -2241,6 +2301,21 @@ NglEstimationResult estimate_ngl_from_cuda_info(const std::string& model_path,
     }
 
     return result;
+}
+
+std::vector<int> build_model_load_retry_candidates(const std::string& model_path,
+                                                   int optimistic_layers)
+{
+    int conservative_layers = optimistic_layers;
+    const PreferredBackend backend = detect_preferred_backend();
+    if (backend != PreferredBackend::Cpu && backend != PreferredBackend::Vulkan) {
+        const NglEstimationResult estimation = estimate_ngl_from_cuda_info(model_path, nullptr);
+        conservative_layers = conservative_retry_layers(estimation.estimator_layers,
+                                                        estimation.heuristic_layers,
+                                                        optimistic_layers);
+    }
+
+    return build_gpu_layer_retry_candidates(optimistic_layers, conservative_layers);
 }
 
 int fallback_ngl(int heuristic_layers, const std::shared_ptr<spdlog::logger>& logger)
@@ -2530,6 +2605,11 @@ llama_model_params prepare_model_params_for_testing(const std::string& model_pat
     return prepare_model_params_result_for_testing(model_path).params;
 }
 
+std::vector<int> gpu_layer_retry_candidates_for_testing(int optimistic_layers,
+                                                        int conservative_layers) {
+    return build_gpu_layer_retry_candidates(optimistic_layers, conservative_layers);
+}
+
 } // namespace LocalLLMTestAccess
 #endif // AI_FILE_SORTER_TEST_BUILD && !GGML_USE_METAL
 
@@ -2573,6 +2653,33 @@ llama_model_params LocalLLMClient::load_model_or_throw(llama_model_params model_
 
     if (try_load(model_params)) {
         return model_params;
+    }
+
+    const bool has_explicit_gpu_layer_override = resolve_gpu_layer_override() != INT_MIN;
+    if (model_params.n_gpu_layers > 0 && !has_explicit_gpu_layer_override) {
+        const std::vector<int> retry_layers =
+            build_model_load_retry_candidates(model_path, model_params.n_gpu_layers);
+        for (std::size_t i = 1; i < retry_layers.size(); ++i) {
+            const int previous_layers = retry_layers[i - 1];
+            const int retry_layers_count = retry_layers[i];
+            if (logger) {
+                logger->warn("Failed to load model with n_gpu_layers={}; retrying with n_gpu_layers={}.",
+                             previous_layers,
+                             retry_layers_count);
+            }
+
+            llama_model_params retry_params = model_params;
+            retry_params.n_gpu_layers = retry_layers_count;
+            if (try_load(retry_params)) {
+                if (logger) {
+                    logger->info("Loaded local model '{}' after reducing n_gpu_layers from {} to {}.",
+                                 model_path,
+                                 model_params.n_gpu_layers,
+                                 retry_layers_count);
+                }
+                return retry_params;
+            }
+        }
     }
 
     if (model_params.n_gpu_layers != 0) {

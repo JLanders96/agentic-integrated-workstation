@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #ifdef AI_FILE_SORTER_HAS_MTMD
 #include "ggml.h"
@@ -181,6 +182,12 @@ private:
 namespace LlavaImageAnalyzerTestAccess {
 int32_t default_visual_batch_size(bool gpu_enabled, std::string_view backend_name);
 int32_t visual_model_n_gpu_layers_for_model(const std::string& model_path);
+/**
+ * @brief Builds the visual GPU-layer retry ladder from a headroom-aware starting point.
+ * @param initial_layers Initial visual `n_gpu_layers` value to try.
+ * @return Descending retry candidates, including the starting point when positive.
+ */
+std::vector<int32_t> visual_gpu_layer_retry_candidates(int32_t initial_layers);
 /**
  * @brief Estimates a safer visual n_gpu_layers cap after reserving mmproj and eval headroom.
  * @param model_path Path to the visual text model.

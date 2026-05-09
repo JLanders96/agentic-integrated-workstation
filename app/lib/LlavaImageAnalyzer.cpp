@@ -73,6 +73,9 @@ constexpr int32_t kVisualBatchRetrySize = 256;
 constexpr int32_t kVisualBatchEmergencySize = 128;
 constexpr int32_t kVisualReducedContextTokens = 2048;
 constexpr int32_t kVisualMinimumContextTokens = 1024;
+constexpr int32_t kVisualGpuLayerRetryScaleNumerator = 3;
+constexpr int32_t kVisualGpuLayerRetryScaleDenominator = 4;
+constexpr int32_t kMinimumVisualGpuLayerRetryCount = 1;
 constexpr std::size_t kEstimatedPromptBufferBytes = 4096;
 constexpr std::size_t kGeneratedResponseReserveBytes = 256;
 constexpr std::size_t kTokenPieceBufferBytes = 256;
@@ -421,6 +424,44 @@ std::vector<int32_t> visual_eval_retry_batches(int32_t current_batch) {
         batches.push_back(kVisualBatchEmergencySize);
     }
     return batches;
+}
+
+void append_unique_positive_visual_retry_layers(std::vector<int32_t>& candidates,
+                                                int32_t layers) {
+    if (layers <= 0) {
+        return;
+    }
+    if (!candidates.empty() && candidates.back() == layers) {
+        return;
+    }
+    candidates.push_back(layers);
+}
+
+int32_t reduced_visual_retry_layers(int32_t current_layers) {
+    if (current_layers <= kMinimumVisualGpuLayerRetryCount) {
+        return 0;
+    }
+
+    int32_t reduced =
+        (current_layers * kVisualGpuLayerRetryScaleNumerator) /
+        kVisualGpuLayerRetryScaleDenominator;
+    if (reduced >= current_layers) {
+        reduced = current_layers - 1;
+    }
+    return std::max(kMinimumVisualGpuLayerRetryCount, reduced);
+}
+
+std::vector<int32_t> build_visual_gpu_layer_retry_candidates(int32_t initial_layers) {
+    std::vector<int32_t> candidates;
+    append_unique_positive_visual_retry_layers(candidates, initial_layers);
+
+    int32_t current_layers = initial_layers;
+    while (current_layers > kMinimumVisualGpuLayerRetryCount) {
+        current_layers = reduced_visual_retry_layers(current_layers);
+        append_unique_positive_visual_retry_layers(candidates, current_layers);
+    }
+
+    return candidates;
 }
 
 int32_t estimate_visual_n_gpu_layers_with_headroom(const std::string& model_path,
@@ -1200,6 +1241,10 @@ int32_t visual_model_n_gpu_layers_for_model(const std::string& model_path) {
     return build_visual_model_params_for_path(model_path, model_path, nullptr).n_gpu_layers;
 }
 
+std::vector<int32_t> visual_gpu_layer_retry_candidates(int32_t initial_layers) {
+    return build_visual_gpu_layer_retry_candidates(initial_layers);
+}
+
 int32_t visual_model_n_gpu_layers_with_headroom(const std::string& model_path,
                                                 const std::string& mmproj_path,
                                                 std::string_view backend_name,
@@ -1269,6 +1314,8 @@ LlavaImageAnalyzer::LlavaImageAnalyzer(const std::filesystem::path& model_path,
     if (visual_gpu_override_.has_value()) {
         settings_.use_gpu = *visual_gpu_override_;
     }
+    const bool has_explicit_visual_gpu_layer_override =
+        resolve_visual_gpu_layer_override().has_value();
 
     auto logger = Logger::get_logger("core_logger");
     const std::string backend_name = resolve_backend_name();
@@ -1296,13 +1343,49 @@ LlavaImageAnalyzer::LlavaImageAnalyzer(const std::filesystem::path& model_path,
     } else {
         model_params.n_gpu_layers = 0;
     }
-    text_gpu_enabled_ = settings_.use_gpu && model_params.n_gpu_layers != 0;
-    context_tokens_ = settings_.n_ctx;
-    batch_size_ = resolve_default_visual_batch_size(text_gpu_enabled_, backend_name);
-    model_ = llama_model_load_from_file(model_path_utf8.c_str(), model_params);
+
+    auto try_load_visual_model = [&](const llama_model_params& params) -> bool {
+        model_ = llama_model_load_from_file(model_path_utf8.c_str(), params);
+        return model_ != nullptr;
+    };
+
+    if (!try_load_visual_model(model_params)) {
+        if (model_params.n_gpu_layers > 0 && !has_explicit_visual_gpu_layer_override) {
+            const auto retry_layers =
+                build_visual_gpu_layer_retry_candidates(model_params.n_gpu_layers);
+            for (std::size_t i = 1; i < retry_layers.size(); ++i) {
+                const int32_t previous_layers = retry_layers[i - 1];
+                const int32_t retry_layers_count = retry_layers[i];
+                if (logger) {
+                    logger->warn(
+                        "Failed to load visual text model with n_gpu_layers={}; retrying with n_gpu_layers={}.",
+                        previous_layers,
+                        retry_layers_count);
+                }
+
+                llama_model_params retry_params = model_params;
+                retry_params.n_gpu_layers = retry_layers_count;
+                if (try_load_visual_model(retry_params)) {
+                    if (logger) {
+                        logger->info(
+                            "Loaded visual text model '{}' after reducing n_gpu_layers from {} to {}.",
+                            model_path_utf8,
+                            model_params.n_gpu_layers,
+                            retry_layers_count);
+                    }
+                    model_params = retry_params;
+                    break;
+                }
+            }
+        }
+    }
     if (!model_) {
         throw std::runtime_error("Failed to load visual text model at " + model_path_utf8);
     }
+
+    text_gpu_enabled_ = settings_.use_gpu && model_params.n_gpu_layers != 0;
+    context_tokens_ = settings_.n_ctx;
+    batch_size_ = resolve_default_visual_batch_size(text_gpu_enabled_, backend_name);
 
     vocab_ = llama_model_get_vocab(model_);
 
@@ -1310,19 +1393,49 @@ LlavaImageAnalyzer::LlavaImageAnalyzer(const std::filesystem::path& model_path,
     if (mmproj_use_gpu && (!visual_gpu_override_.has_value() || !*visual_gpu_override_)) {
         mmproj_use_gpu = should_enable_mmproj_gpu(mmproj_path, backend_name, logger);
     }
-    mmproj_gpu_enabled_ = mmproj_use_gpu;
+    const bool allow_mmproj_cpu_retry =
+        mmproj_use_gpu && (!visual_gpu_override_.has_value() || !*visual_gpu_override_);
 
-    mtmd_context_params mm_params = mtmd_context_params_default();
-    mm_params.use_gpu = mmproj_gpu_enabled_;
-    mm_params.n_threads = settings_.n_threads;
-    vision_ctx_ = mtmd_init_from_file(mmproj_path_utf8.c_str(), model_, mm_params);
-    if (!vision_ctx_) {
+    auto try_init_mmproj = [&](bool use_gpu) -> bool {
+        if (vision_ctx_) {
+            mtmd_free(vision_ctx_);
+            vision_ctx_ = nullptr;
+        }
+
+        mtmd_context_params mm_params = mtmd_context_params_default();
+        mm_params.use_gpu = use_gpu;
+        mm_params.n_threads = settings_.n_threads;
+        vision_ctx_ = mtmd_init_from_file(mmproj_path_utf8.c_str(), model_, mm_params);
+        if (!vision_ctx_) {
+            return false;
+        }
+        if (!mtmd_support_vision(vision_ctx_)) {
+            mtmd_free(vision_ctx_);
+            vision_ctx_ = nullptr;
+            throw std::runtime_error("The provided multimodal projector does not expose vision capabilities");
+        }
+        mmproj_gpu_enabled_ = use_gpu;
+        return true;
+    };
+
+    try {
+        if (!try_init_mmproj(mmproj_use_gpu)) {
+            if (allow_mmproj_cpu_retry) {
+                if (logger) {
+                    logger->warn("Failed to load multimodal projector on GPU; retrying with CPU projector execution.");
+                }
+                if (!try_init_mmproj(false)) {
+                    cleanup();
+                    throw std::runtime_error("Failed to load multimodal projector file at " + mmproj_path_utf8);
+                }
+            } else {
+                cleanup();
+                throw std::runtime_error("Failed to load multimodal projector file at " + mmproj_path_utf8);
+            }
+        }
+    } catch (...) {
         cleanup();
-        throw std::runtime_error("Failed to load multimodal projector file at " + mmproj_path_utf8);
-    }
-    if (!mtmd_support_vision(vision_ctx_)) {
-        cleanup();
-        throw std::runtime_error("The provided multimodal projector does not expose vision capabilities");
+        throw;
     }
     try {
         initialize_context();

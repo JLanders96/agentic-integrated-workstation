@@ -86,6 +86,20 @@ Procedure: Call `prepare_model_params_for_testing()`.
 Expected outcome: `n_gpu_layers` equals `7`.
 Run: `./build-tests/ai_file_sorter_tests "CUDA override is applied when backend is available"`
 
+#### Test case: LocalLLMClient builds a descending GPU-layer retry ladder from optimistic and conservative estimates
+Purpose: Ensure GPU model-load retries probe a deterministic sequence before giving up on the backend.
+Setup: Provide an optimistic layer count of `20` and a conservative layer count of `15`.
+Procedure: Build the retry ladder through the LocalLLM test access helper.
+Expected outcome: The ladder is exactly `20, 15, 11, 8, 6, 4, 3, 2, 1`, with each retry smaller than the last.
+Run: `./build-tests/ai_file_sorter_tests "LocalLLMClient builds a descending GPU-layer retry ladder from optimistic and conservative estimates"`
+
+#### Test case: LocalLLMClient deduplicates matching retry estimates before reducing GPU layers
+Purpose: Avoid redundant GPU reload attempts when optimistic and conservative estimates are the same.
+Setup: Provide matching optimistic and conservative layer counts of `15`.
+Procedure: Build the retry ladder through the LocalLLM test access helper.
+Expected outcome: The ladder starts at `15` once and then descends to `11, 8, 6, 4, 3, 2, 1` without duplicate entries.
+Run: `./build-tests/ai_file_sorter_tests "LocalLLMClient deduplicates matching retry estimates before reducing GPU layers"`
+
 #### Test case: CUDA backend reports low GPU memory before load
 Purpose: Ensure CUDA preflight checks fall back to CPU before model load when available VRAM is too low.
 Setup: Set `AI_FILE_SORTER_GPU_BACKEND=cuda`, leave the layer override unset, inject a CUDA-available probe, and inject a CUDA memory probe with extremely low free memory.
@@ -645,6 +659,20 @@ Expected outcome: The reloaded settings still report `gemma-3-4b-it`.
 Run: `./build-tests/ai_file_sorter_tests "Settings persists selected visual model backend"`
 
 ### `tests/unit/test_llava_image_analyzer.cpp`
+
+#### Test case: LlavaImageAnalyzer builds a descending visual GPU-layer retry ladder
+Purpose: Ensure visual model-load retries probe smaller `n_gpu_layers` values before giving up on GPU execution.
+Setup: Use the visual analyzer test access helper with an initial headroom-aware layer count of `20`.
+Procedure: Build the visual retry ladder from the starting layer count.
+Expected outcome: The ladder descends as `20, 15, 11, 8, 6, 4, 3, 2, 1`.
+Run: `./build-tests/ai_file_sorter_tests "LlavaImageAnalyzer builds a descending visual GPU-layer retry ladder"`
+
+#### Test case: LlavaImageAnalyzer keeps a single visual GPU-layer retry candidate at one layer
+Purpose: Avoid redundant retry work once the visual ladder reaches the minimum offload count.
+Setup: Use the visual analyzer test access helper with an initial layer count of `1`.
+Procedure: Build the visual retry ladder from the starting layer count.
+Expected outcome: The ladder contains only `1`.
+Run: `./build-tests/ai_file_sorter_tests "LlavaImageAnalyzer keeps a single visual GPU-layer retry candidate at one layer"`
 
 #### Test case: LlavaImageAnalyzer keeps guarded visual projectors on CPU when headroom is tight
 Purpose: Verify CUDA and Vulkan visual projector GPU use is gated by available memory headroom.

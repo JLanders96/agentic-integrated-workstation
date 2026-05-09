@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 #include "llama.h"
 
 namespace LocalLLMTestAccess {
@@ -41,6 +42,14 @@ struct PreparedModelParamsResult {
  */
 PreparedModelParamsResult prepare_model_params_result_for_testing(const std::string& model_path);
 llama_model_params prepare_model_params_for_testing(const std::string& model_path);
+/**
+ * @brief Builds the GPU-layer retry sequence used after an optimistic load failure.
+ * @param optimistic_layers First load attempt, typically the larger optimistic estimate.
+ * @param conservative_layers Second load attempt, typically the smaller conservative estimate.
+ * @return Strict retry ladder with duplicates removed and each later value reduced geometrically.
+ */
+std::vector<int> gpu_layer_retry_candidates_for_testing(int optimistic_layers,
+                                                        int conservative_layers);
 std::string categorization_system_prompt_for_testing(const std::string& file_path,
                                                      FileType file_type);
 std::string categorization_user_prompt_for_testing(const std::string& file_name,
