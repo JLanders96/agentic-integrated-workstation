@@ -29,14 +29,6 @@ std::filesystem::path require_artifact_path(const VisualLlmRuntime::Backend& bac
     return *path;
 }
 
-std::string trim_copy(std::string value)
-{
-    const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
-    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
-    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
-    return value;
-}
-
 void validate_visual_artifact_file(const std::filesystem::path& path, const char* label)
 {
     if (!std::filesystem::exists(path)) {
@@ -50,6 +42,15 @@ void validate_visual_artifact_file(const std::filesystem::path& path, const char
                                  " artifact is invalid or incomplete (expected GGUF header): " +
                                  Utils::path_to_utf8(path));
     }
+}
+
+#ifdef _WIN32
+std::string trim_copy(std::string value)
+{
+    const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+    return value;
 }
 
 std::optional<bool> read_env_bool(const char* key)
@@ -90,7 +91,6 @@ std::optional<int> read_env_int(const char* key)
     return static_cast<int>(parsed);
 }
 
-#ifdef _WIN32
 bool should_skip_visual_gpu_preflight()
 {
     if (const auto enabled = read_env_bool("AI_FILE_SORTER_VISUAL_GPU_PREFLIGHT")) {
