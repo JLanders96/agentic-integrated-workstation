@@ -14,6 +14,8 @@ automatically redacting common sensitive data, and creating a zipped bundle to s
 - `build_plugins_windows.ps1` (Build Windows plugin targets)
 - `upload_plugins.py` (Upload prepared plugin payloads and merge the remote catalog)
 - `verify_onedrive_windows_sync_root.ps1` (Run real Windows OneDrive sync-root verification tests)
+- `package_deb.sh` (Build a Debian package that bundles the staged Linux runtime payloads)
+- `create_rpm.sh` (Build an RPM package that bundles the staged Linux runtime payloads)
 
 ## What they do
 

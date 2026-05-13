@@ -476,6 +476,19 @@ File categorization with local LLMs is completely free of charge. If you prefer 
    `--include-vulkan` / `--include-cuda` if you want the script to fail when a specific
    staged variant is missing.
 
+8. **Build an RPM package (optional; Fedora / RHEL)**
+
+   ```bash
+   ./app/scripts/create_rpm.sh
+   ```
+
+   The RPM packaging script follows the same runtime-selection model as the Debian packager:
+   CPU is always bundled, staged CUDA/Vulkan runtime dirs are auto-included when present, and
+   the installed `run_aifilesorter.sh` launcher chooses CUDA first, then Vulkan, then CPU at
+   runtime. Use `./app/scripts/create_rpm.sh --cpu-only` for a smaller CPU-only package, or
+   `--include-vulkan` / `--include-cuda` if you want the script to fail when a specific
+   staged variant is missing. The RPM payload is built under `dist/aifilesorter_rpm/`.
+
 ### macOS
 
 1. **Install Xcode command-line tools** (`xcode-select --install`).

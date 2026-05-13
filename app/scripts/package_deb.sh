@@ -19,6 +19,7 @@ usage() {
 Usage: ./package_deb.sh [options] [version]
 
 Options:
+  --cpu-only         Include only the CPU runtime, even if GPU variants are staged.
   --include-cuda     Include precompiled CUDA runtime libs (app/lib/precompiled/cuda)
   --include-vulkan   Include precompiled Vulkan runtime libs (app/lib/precompiled/vulkan)
   --include-all      Include CPU + CUDA + Vulkan precompiled runtime libs
@@ -26,6 +27,7 @@ Options:
 
 Notes:
   - CPU precompiled libs are included by default.
+  - Staged CUDA/Vulkan runtime dirs are auto-included when present unless --cpu-only is used.
   - Root files in app/lib/precompiled (e.g. libpdfium.so) are always included when present.
 EOF
 }
@@ -50,22 +52,26 @@ VERSION_FROM_HEADER() {
 }
 
 INCLUDE_CPU=1
-INCLUDE_CUDA=0
-INCLUDE_VULKAN=0
+AUTO_INCLUDE_GPU=1
+REQUIRE_CUDA=0
+REQUIRE_VULKAN=0
 VERSION_ARG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --cpu-only)
+            AUTO_INCLUDE_GPU=0
+            ;;
         --include-cuda)
-            INCLUDE_CUDA=1
+            REQUIRE_CUDA=1
             ;;
         --include-vulkan)
-            INCLUDE_VULKAN=1
+            REQUIRE_VULKAN=1
             ;;
         --include-all)
             INCLUDE_CPU=1
-            INCLUDE_CUDA=1
-            INCLUDE_VULKAN=1
+            REQUIRE_CUDA=1
+            REQUIRE_VULKAN=1
             ;;
         -h|--help)
             usage
@@ -89,6 +95,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 VERSION="${VERSION_ARG:-$(VERSION_FROM_HEADER "$APP_DIR/include/app_version.hpp")}"
+
+if [[ "$AUTO_INCLUDE_GPU" == "0" && ( "$REQUIRE_CUDA" == "1" || "$REQUIRE_VULKAN" == "1" ) ]]; then
+    echo "Cannot combine --cpu-only with GPU include flags." >&2
+    exit 1
+fi
 
 if [[ -z "$VERSION" ]]; then
     echo "Failed to determine package version." >&2
@@ -189,6 +200,25 @@ ln -sf aifilesorter-bin "$PKG_ROOT/opt/aifilesorter/bin/aifilesorter"
 PRECOMPILED_SRC="$APP_DIR/lib/precompiled"
 PRECOMPILED_DST="$PKG_ROOT/opt/aifilesorter/lib/precompiled"
 
+resolve_variant_inclusion() {
+    local variant="$1"
+    local required="$2"
+    local src_dir="$PRECOMPILED_SRC/$variant"
+    if [[ "$required" == "1" ]]; then
+        if [[ ! -d "$src_dir" ]]; then
+            echo "Requested precompiled variant '$variant' but '$src_dir' was not found." >&2
+            exit 1
+        fi
+        echo "1"
+        return 0
+    fi
+    if [[ "$AUTO_INCLUDE_GPU" == "1" && -d "$src_dir" ]]; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
+
 copy_variant_dir() {
     local variant="$1"
     local enabled="$2"
@@ -203,6 +233,25 @@ copy_variant_dir() {
     cp -a "$src_dir" "$PRECOMPILED_DST/"
 }
 
+sanitize_precompiled_rpaths() {
+    local root="$1"
+    if [[ ! -d "$root" ]]; then
+        return 0
+    fi
+    if ! command -v patchelf >/dev/null 2>&1; then
+        echo "Warning: patchelf not found; packaging shared libraries without normalizing RUNPATHs." >&2
+        return 0
+    fi
+
+    local lib=""
+    while IFS= read -r -d '' lib; do
+        patchelf --set-rpath '$ORIGIN' "$lib"
+    done < <(find "$root" -regextype posix-extended -type f -regex '.*[.]so([.][0-9]+)*$' -print0)
+}
+
+INCLUDE_CUDA="$(resolve_variant_inclusion cuda "$REQUIRE_CUDA")"
+INCLUDE_VULKAN="$(resolve_variant_inclusion vulkan "$REQUIRE_VULKAN")"
+
 echo "Copying llama/ggml libraries"
 if [[ -d "$PRECOMPILED_SRC" ]]; then
     mkdir -p "$PRECOMPILED_DST"
@@ -212,6 +261,7 @@ if [[ -d "$PRECOMPILED_SRC" ]]; then
     copy_variant_dir cpu "$INCLUDE_CPU"
     copy_variant_dir cuda "$INCLUDE_CUDA"
     copy_variant_dir vulkan "$INCLUDE_VULKAN"
+    sanitize_precompiled_rpaths "$PRECOMPILED_DST"
 else
     echo "Warning: '$PRECOMPILED_SRC' not found; packaging without bundled llama/ggml runtime libs." >&2
 fi
