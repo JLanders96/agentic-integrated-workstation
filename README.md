@@ -312,20 +312,82 @@ File categorization with local LLMs is completely free of charge. If you prefer 
     sudo apt update && sudo apt install -y \
       build-essential cmake git qt6-base-dev qt6-base-dev-tools qt6-l10n-tools qt6-tools-dev-tools \
       libcurl4-openssl-dev libjsoncpp-dev libsqlite3-dev libssl-dev libfmt-dev libspdlog-dev libmediainfo-dev \
-      zlib1g-dev
+      zlib1g-dev patchelf
     ```
    - Fedora / RHEL:
 
     ```bash
     export PATH="/usr/lib64/qt6/libexec:$PATH"
-    sudo dnf install -y gcc-c++ cmake git qt6-qtbase-devel qt6-qttools-devel \
-      libcurl-devel jsoncpp-devel sqlite-devel openssl-devel fmt-devel spdlog-devel mediainfo-devel
+    sudo dnf install -y gcc-c++ cmake git pkgconf-pkg-config qt6-qtbase-devel qt6-qttools-devel \
+      libcurl-devel jsoncpp-devel sqlite-devel openssl-devel fmt-devel spdlog-devel libmediainfo-devel openblas-devel patchelf
     ```
+
+    `openblas-devel` provides the OpenBLAS headers/libs used for the CPU baseline and for
+    explicit `blas=on` llama builds on Fedora.
+
+    If you plan to build the Vulkan llama runtime on Fedora, also install the Vulkan tools
+    and shader compiler, plus a working Vulkan driver/runtime:
+
+    ```bash
+    sudo dnf install -y vulkan-tools glslc
+    # AMD / Intel / Mesa-based Vulkan runtime
+    sudo dnf install -y mesa-vulkan-drivers
+    # NVIDIA proprietary driver users should install the vendor Vulkan runtime instead
+    vulkaninfo >/dev/null
+    ```
+
+    If you plan to build the CUDA llama runtime on Linux, install an NVIDIA driver plus the
+    full NVIDIA CUDA Toolkit (not just Python wheels/runtime packages), then verify both the
+    driver and compiler in the same shell you will use for the build:
+
+    ```bash
+    export PATH="/usr/local/cuda/bin:$PATH"
+    nvidia-smi
+    nvcc --version
+    ```
+
+    Debian/Ubuntu users can use the distro-packaged toolkit (`nvidia-cuda-toolkit`) if it
+    matches the driver/runtime they intend to build against. Fedora/RHEL users should use a
+    supported CUDA Toolkit install from NVIDIA's Linux installation guide because the NVIDIA
+    CUDA repository setup varies by release. On Fedora, enable the NVIDIA CUDA repository
+    first or `sudo dnf install cuda-toolkit` will fail with "No match for argument":
+
+    ```bash
+    distro="fedora$(rpm -E %fedora)"
+    sudo dnf install -y dnf-plugins-core
+    sudo dnf config-manager addrepo \
+      --from-repofile="https://developer.download.nvidia.com/compute/cuda/repos/${distro}/x86_64/cuda-${distro}.repo"
+    sudo dnf clean expire-cache
+    ```
+
+    Once that repository is enabled for your Fedora release, the toolkit install itself is:
+
+    ```bash
+    sudo dnf install -y cuda-toolkit
+    ```
+
+    If you also want NVIDIA's packaged driver path from the same guide rather than a
+    separately installed proprietary driver, the documented Fedora command is:
+
+    ```bash
+    sudo dnf module install -y nvidia-driver:latest-dkms
+    ```
+
+    The official Fedora instructions, including repo enablement and RPMFusion caveats, are:
+    <https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html>
+
+    On Linux, the helper also needs a CUDA-supported `g++` host compiler. It auto-selects
+    `/usr/bin/g++-15`, `g++-14`, `g++-13`, `g++-12`, `g++-11`, `g++-10`, then `g++`, and
+    will stop with an error if none of those are suitable. Current CUDA 13.2 supports GCC
+    6.x through 15.x. If your installed CUDA release supports an older range than your distro
+    default compiler, install a compatibility package such as Fedora `gcc14-c++` or
+    `gcc13-c++` and rerun with `NVCC_CCBIN=/usr/bin/g++-14` or `NVCC_CCBIN=/usr/bin/g++-13`
+    in the same shell.
 
    - Arch / Manjaro:
 
     ```bash
-     sudo pacman -S --needed base-devel git cmake qt6-base qt6-tools curl jsoncpp sqlite openssl fmt spdlog mediainfo
+     sudo pacman -S --needed base-devel git cmake qt6-base qt6-tools curl jsoncpp sqlite openssl fmt spdlog mediainfo patchelf
     ```
 
      Optional GPU acceleration also requires either the distro Vulkan 1.2+ driver/runtime (Mesa, AMD, Intel, NVIDIA) or CUDA packages for NVIDIA cards. Install whichever stack you plan to use; the app will fall back to CPU automatically if none are detected.
@@ -366,12 +428,20 @@ File categorization with local LLMs is completely free of charge. If you prefer 
 
 4. **Build the llama runtime variants** (run once per backend you plan to ship/test)
 
+   The Linux helper accepts either `cuda=on` / `vulkan=on` / `blas=on` or the GNU-style
+   `--cuda=on` / `--vulkan=on` / `--blas=on` forms.
+
    ```bash
    # CPU / OpenBLAS
    ./app/scripts/build_llama_linux.sh cuda=off vulkan=off
-   # CUDA (optional; requires NVIDIA driver + CUDA toolkit)
+   # CUDA (optional; requires NVIDIA driver + full CUDA Toolkit; verify `nvidia-smi`
+   # and `nvcc --version` first. If `nvcc` is not on PATH after install, run
+   # `export PATH=/usr/local/cuda/bin:$PATH` in this shell. On Linux the helper also
+   # needs a CUDA-supported g++ host compiler and now prefers /usr/bin/g++-15 first.)
    ./app/scripts/build_llama_linux.sh cuda=on vulkan=off
-   # Vulkan (optional; requires a working Vulkan 1.2+ stack and glslc, e.g. mesa-vulkan-drivers + vulkan-tools + glslc)
+   # Vulkan (optional; requires a working Vulkan 1.2+ stack and glslc; on Fedora install
+   # vulkan-tools + glslc and ensure `vulkaninfo` succeeds. Mesa-based systems also need
+   # mesa-vulkan-drivers.)
    ./app/scripts/build_llama_linux.sh cuda=off vulkan=on
    ```
 
@@ -503,6 +573,18 @@ Option A - CMake + vcpkg (recommended)
    - vcpkg: <https://github.com/microsoft/vcpkg> (clone and bootstrap)
    - package-managed `libmediainfo` via vcpkg manifest (no vendored MediaInfo submodule/binaries)
    - **MSYS2 MinGW64 + OpenBLAS**: install MSYS2 from <https://www.msys2.org>, open an *MSYS2 MINGW64* shell, and run `pacman -S --needed mingw-w64-x86_64-openblas`. The `build_llama_windows.ps1` script uses this OpenBLAS copy by default for CPU-only builds and also supports forcing it with `blas=on` for other variants if needed. It defaults to `C:\msys64\mingw64` unless you pass `openblasroot=<path>` or set `OPENBLAS_ROOT`.
+   - **If you plan to build the CUDA runtime on Windows**: install the current NVIDIA driver and the full NVIDIA CUDA Toolkit from <https://developer.nvidia.com/cuda-downloads>. After installation, open a fresh **x64 Native Tools / VS 2022 Developer PowerShell** and verify the toolkit/driver before running the helper:
+
+     ```powershell
+     $env:CUDA_PATH
+     nvcc --version
+     nvidia-smi
+     ```
+
+     The Windows helper expects a full toolkit install with `nvcc`, headers, and libraries.
+     Conda or pip CUDA runtime packages are not enough for building the bundled `llama.cpp`
+     CUDA variant. NVIDIA's official Windows installation guide is here:
+     <https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html>
 2. Clone repo and submodules:
 
    ```powershell
@@ -540,7 +622,7 @@ Option A - CMake + vcpkg (recommended)
     - Otherwise use the directory where you cloned vcpkg, or pass it explicitly to the helper scripts.
 
    MediaInfo note: you do **not** manually add `MediaInfoLib` include/lib paths on Windows. The project already declares `libmediainfo` in `app/vcpkg.json`, and `app\build_windows.ps1` configures CMake with the vcpkg toolchain + manifest so `find_package(MediaInfoLib ...)` resolves it automatically. If you want to preinstall or verify it explicitly, run `vcpkg install libmediainfo:x64-windows`.
-5. Build the bundled `llama.cpp` runtime variants (run from the same **x64 Native Tools** / **VS 2022 Developer PowerShell** shell). Invoke the script once per backend you need. The script accepts `cuda=on|off`, `vulkan=on|off`, `blas=on|off`, `vcpkgroot=<path>`, and `openblasroot=<path>`. `vcpkgroot=<path>` is optional and only needed when auto-discovery misses your install. `blas` defaults to `AUTO`: it is enabled automatically for CPU-only builds and disabled automatically for CUDA/Vulkan builds unless you force it on. For CUDA builds, the helper prefers a valid `CUDA_PATH` and otherwise auto-selects the newest installed toolkit it can validate under `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA`. Make sure the MSYS2 OpenBLAS install from step 1 is present before running the CPU-only variant (or pass `openblasroot=<path>` explicitly):
+5. Build the bundled `llama.cpp` runtime variants (run from the same **x64 Native Tools** / **VS 2022 Developer PowerShell** shell). Invoke the script once per backend you need. The script accepts `cuda=on|off`, `vulkan=on|off`, `blas=on|off`, `vcpkgroot=<path>`, and `openblasroot=<path>`. `vcpkgroot=<path>` is optional and only needed when auto-discovery misses your install. `blas` defaults to `AUTO`: it is enabled automatically for CPU-only builds and disabled automatically for CUDA/Vulkan builds unless you force it on. For CUDA builds, the helper prefers a valid `CUDA_PATH` and otherwise auto-selects the newest installed toolkit it can validate under `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA`. Make sure `nvcc --version` and `nvidia-smi` succeed in this same shell before running `cuda=on`. Make sure the MSYS2 OpenBLAS install from step 1 is present before running the CPU-only variant (or pass `openblasroot=<path>` explicitly):
 
    ```powershell
    # CPU / OpenBLAS only

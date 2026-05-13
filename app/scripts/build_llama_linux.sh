@@ -14,12 +14,14 @@ fi
 PRECOMPILED_ROOT_DIR="$SCRIPT_DIR/../lib/precompiled"
 HEADERS_DIR="$SCRIPT_DIR/../include/llama"
 
-# Parse optional arguments (cuda=on/off, vulkan=on/off, blas=on/off/auto)
+# Parse optional arguments (cuda=on/off, vulkan=on/off, blas=on/off/auto).
+# Accept both bare key=value and GNU-style --key=value forms.
 CUDASWITCH="OFF"
 VULKANSWITCH="OFF"
 BLASSWITCH="AUTO"
 for arg in "$@"; do
-    case "${arg,,}" in
+    normalized_arg="${arg#--}"
+    case "${normalized_arg,,}" in
         cuda=on) CUDASWITCH="ON" ;;
         cuda=off) CUDASWITCH="OFF" ;;
         vulkan=on) VULKANSWITCH="ON" ;;
@@ -39,23 +41,60 @@ echo "CUDA support: $CUDASWITCH"
 echo "VULKAN support: $VULKANSWITCH"
 echo "BLAS support: $BLASSWITCH (auto prefers OpenBLAS for CPU baseline)"
 
-# Resolve OpenBLAS availability when BLAS is set to AUTO
+# Resolve OpenBLAS availability for both AUTO and explicit BLAS=ON requests.
+openblas_available() {
+    if command -v pkg-config >/dev/null 2>&1; then
+        if pkg-config --exists openblas64 || pkg-config --exists openblas; then
+            return 0
+        fi
+    fi
+
+    local lib_candidate=""
+    local header_candidate=""
+
+    for candidate in \
+        /usr/lib/libopenblas.so \
+        /usr/lib64/libopenblas.so \
+        /usr/lib64/openblas/libopenblas.so \
+        /usr/lib/x86_64-linux-gnu/libopenblas.so \
+        /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblas.so \
+        /usr/lib/aarch64-linux-gnu/libopenblas.so \
+        /usr/lib/aarch64-linux-gnu/openblas-pthread/libopenblas.so; do
+        if [ -e "$candidate" ]; then
+            lib_candidate="$candidate"
+            break
+        fi
+    done
+
+    for candidate in \
+        /usr/include/cblas.h \
+        /usr/include/openblas/cblas.h \
+        /usr/include/openblas-pthread/cblas.h \
+        /usr/include/x86_64-linux-gnu/cblas.h \
+        /usr/include/x86_64-linux-gnu/openblas/cblas.h \
+        /usr/include/x86_64-linux-gnu/openblas-pthread/cblas.h \
+        /usr/include/aarch64-linux-gnu/cblas.h \
+        /usr/include/aarch64-linux-gnu/openblas/cblas.h \
+        /usr/include/aarch64-linux-gnu/openblas-pthread/cblas.h; do
+        if [ -e "$candidate" ]; then
+            header_candidate="$candidate"
+            break
+        fi
+    done
+
+    [[ -n "$lib_candidate" && -n "$header_candidate" ]]
+}
+
 resolve_blas_setting() {
     local requested="$1"
-    if [[ "$requested" == "ON" || "$requested" == "OFF" ]]; then
-        echo "$requested"
+    if [[ "$requested" == "OFF" ]]; then
+        echo "OFF"
         return 0
     fi
-    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists openblas; then
+    if openblas_available; then
         echo "ON"
         return 0
     fi
-    for candidate in /usr/lib/libopenblas.so /usr/lib64/libopenblas.so /usr/lib/x86_64-linux-gnu/libopenblas.so /usr/lib/aarch64-linux-gnu/libopenblas.so; do
-        if [ -e "$candidate" ]; then
-            echo "ON"
-            return 0
-        fi
-    done
     echo "OFF"
 }
 
@@ -64,17 +103,56 @@ resolve_cuda_host_compiler() {
     local version=""
     local major=""
 
-    for candidate in /usr/bin/g++-13 /usr/bin/g++-12 /usr/bin/g++-11 /usr/bin/g++-10 /usr/bin/g++; do
+    for candidate in /usr/bin/g++-15 /usr/bin/g++-14 /usr/bin/g++-13 /usr/bin/g++-12 /usr/bin/g++-11 /usr/bin/g++-10 /usr/bin/g++; do
         [ -x "$candidate" ] || continue
         version="$("$candidate" -dumpfullversion -dumpversion 2>/dev/null || true)"
         major="${version%%.*}"
-        if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 6 && major <= 13 )); then
+        if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 6 && major <= 15 )); then
             echo "$candidate"
             return 0
         fi
     done
 
     echo ""
+}
+
+resolve_cuda_compiler() {
+    local candidate=""
+
+    if [[ -n "${CUDACXX:-}" && -x "${CUDACXX}" ]]; then
+        echo "${CUDACXX}"
+        return 0
+    fi
+
+    if candidate="$(command -v nvcc 2>/dev/null)" && [[ -n "$candidate" && -x "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+
+    for candidate in /usr/local/cuda/bin/nvcc /usr/local/cuda-*/bin/nvcc; do
+        if [[ -x "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+normalize_shared_library_rpaths() {
+    if ! command -v patchelf >/dev/null 2>&1; then
+        echo "Warning: patchelf not found; skipping RUNPATH fix for llama libraries."
+        return 0
+    fi
+
+    local target_dir=""
+    local lib=""
+    for target_dir in "$@"; do
+        [[ -d "$target_dir" ]] || continue
+        while IFS= read -r -d '' lib; do
+            patchelf --set-rpath '$ORIGIN' "$lib" || true
+        done < <(find "$target_dir" -maxdepth 1 -type f -name '*.so*' -print0)
+    done
 }
 
 build_variant() {
@@ -84,6 +162,7 @@ build_variant() {
     local blas_flag="$4"
     local runtime_subdir="$5"
     local cuda_host_compiler="$6"
+    local cuda_compiler="$7"
 
     local build_dir="$LLAMA_DIR/build-$variant"
     rm -rf "$build_dir"
@@ -110,7 +189,10 @@ build_variant() {
         cmake_args+=( -DGGML_BLAS_VENDOR=OpenBLAS )
     fi
     if [[ "$cuda_flag" == "ON" ]]; then
-        cmake_args+=( -DCMAKE_CUDA_HOST_COMPILER="$cuda_host_compiler" )
+        cmake_args+=(
+            -DCMAKE_CUDA_COMPILER="$cuda_compiler"
+            -DCMAKE_CUDA_HOST_COMPILER="$cuda_host_compiler"
+        )
     fi
 
     cmake "${cmake_args[@]}"
@@ -139,15 +221,7 @@ build_variant() {
     done
     shopt -u nullglob
 
-    if command -v patchelf >/dev/null 2>&1; then
-        if compgen -G "$variant_bin/"'*.so*' >/dev/null; then
-            for lib in "$variant_bin"/*.so*; do
-                patchelf --set-rpath '$ORIGIN' "$lib" || true
-            done
-        fi
-    else
-        echo "Warning: patchelf not found; skipping RUNPATH fix for llama libraries."
-    fi
+    normalize_shared_library_rpaths "$variant_bin" "$variant_lib" "$runtime_dir"
 
     cd "$SCRIPT_DIR"
 }
@@ -155,26 +229,35 @@ build_variant() {
 # Determine BLAS setting (AUTO falls back to OFF if OpenBLAS is missing)
 RESOLVED_BLAS="$(resolve_blas_setting "$BLASSWITCH")"
 if [[ "$BLASSWITCH" == "ON" && "$RESOLVED_BLAS" == "OFF" ]]; then
-    echo "Requested BLAS=ON but OpenBLAS was not found. Install openblas (or set blas=off) and retry." >&2
+    echo "Requested BLAS=ON but OpenBLAS development files were not found." >&2
+    echo "Install the OpenBLAS development package (for example: Fedora/RHEL 'openblas-devel', Debian/Ubuntu 'libopenblas-dev'), or rerun with blas=off." >&2
     exit 1
 fi
 if [[ "$RESOLVED_BLAS" == "OFF" && "$BLASSWITCH" == "AUTO" ]]; then
-    echo "OpenBLAS not detected; building CPU baseline without BLAS. Install openblas and rerun for BLAS acceleration."
+    echo "OpenBLAS development files not detected; building CPU baseline without BLAS. Install the OpenBLAS development package and rerun for BLAS acceleration."
 fi
 
 # Always build a CPU baseline (OpenBLAS when available)
 CUDA_HOST_COMPILER=""
+CUDA_COMPILER=""
 if [[ "$CUDASWITCH" == "ON" ]]; then
+    CUDA_COMPILER="$(resolve_cuda_compiler)"
+    if [[ -z "$CUDA_COMPILER" ]]; then
+        echo "CUDA requested but no nvcc compiler was found." >&2
+        echo "Ensure the full CUDA Toolkit is installed and either set CUDACXX=/full/path/to/nvcc or add nvcc to PATH." >&2
+        exit 1
+    fi
     CUDA_HOST_COMPILER="$(resolve_cuda_host_compiler)"
     if [[ -z "$CUDA_HOST_COMPILER" ]]; then
         echo "CUDA requested but no supported g++ host compiler was found." >&2
-        echo "Install g++-13 (recommended for CUDA 12.4) or another CUDA-supported g++ version and retry." >&2
+        echo "Install a CUDA-supported g++ version (for example g++-15, g++-14, or g++-13 depending on your CUDA release) and retry." >&2
         exit 1
     fi
+    echo "CUDA compiler: $CUDA_COMPILER"
     echo "CUDA host compiler: $CUDA_HOST_COMPILER"
 fi
 
-build_variant "cpu" "OFF" "OFF" "$RESOLVED_BLAS" "wocuda" "$CUDA_HOST_COMPILER"
+build_variant "cpu" "OFF" "OFF" "$RESOLVED_BLAS" "wocuda" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER"
 
 # Build requested accelerator variant if applicable
 REQUESTED_VARIANT="cpu"
@@ -188,7 +271,7 @@ elif [[ "$VULKANSWITCH" == "ON" ]]; then
 fi
 
 if [[ "$REQUESTED_VARIANT" != "cpu" ]]; then
-    build_variant "$REQUESTED_VARIANT" "$CUDASWITCH" "$VULKANSWITCH" "$RESOLVED_BLAS" "$REQUESTED_RUNTIME" "$CUDA_HOST_COMPILER"
+    build_variant "$REQUESTED_VARIANT" "$CUDASWITCH" "$VULKANSWITCH" "$RESOLVED_BLAS" "$REQUESTED_RUNTIME" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER"
 fi
 
 # Copy headers once (from the source tree)
