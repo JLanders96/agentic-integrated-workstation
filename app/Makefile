@@ -412,18 +412,25 @@ TRANSLATIONS_QRC_OBJ := $(OBJ_DIR)/qrc_translations.o
 QMAKE6 := $(shell \
 	if command -v qmake6 >/dev/null 2>&1; then \
 		command -v qmake6; \
+	elif [ -x /usr/lib64/qt6/bin/qmake6 ]; then \
+		printf '%s\n' /usr/lib64/qt6/bin/qmake6; \
 	elif [ -x /usr/lib/qt6/bin/qmake6 ]; then \
 		printf '%s\n' /usr/lib/qt6/bin/qmake6; \
 	fi)
 QTPATHS6 := $(shell \
 	if command -v qtpaths6 >/dev/null 2>&1; then \
 		command -v qtpaths6; \
+	elif [ -x /usr/lib64/qt6/bin/qtpaths6 ]; then \
+		printf '%s\n' /usr/lib64/qt6/bin/qtpaths6; \
 	elif [ -x /usr/lib/qt6/bin/qtpaths6 ]; then \
 		printf '%s\n' /usr/lib/qt6/bin/qtpaths6; \
 	fi)
 
 ifndef RCC
 RCC := $(shell command -v qt6-rcc 2>/dev/null)
+ifeq ($(strip $(RCC)),)
+RCC := $(wildcard /usr/lib64/qt6/libexec/rcc)
+endif
 ifeq ($(strip $(RCC)),)
 RCC := $(wildcard /usr/lib/qt6/libexec/rcc)
 endif
@@ -432,6 +439,9 @@ RCC := $(shell command -v rcc 2>/dev/null)
 endif
 ifeq ($(strip $(RCC)),)
 RCC := $(wildcard /opt/homebrew/opt/qt/bin/qt6-rcc)
+endif
+ifeq ($(strip $(RCC)),)
+RCC := $(wildcard /usr/lib64/qt6/libexec/rcc)
 endif
 ifeq ($(strip $(RCC)),)
 RCC := $(wildcard /usr/lib/qt6/libexec/rcc)
@@ -470,10 +480,12 @@ LRELEASE := $(shell \
 			if [ -n "$$qt_host_dir" ] && [ -x "$$qt_host_dir/lrelease" ]; then \
 				printf '%s\n' "$$qt_host_dir/lrelease"; \
 				exit 0; \
-			fi; \
-		done; \
+	fi; \
+	done; \
 	fi; \
 	for candidate in \
+		/usr/lib64/qt6/libexec/lrelease \
+		/usr/lib64/qt6/bin/lrelease \
 		/usr/lib/qt6/libexec/lrelease \
 		/usr/lib/qt6/bin/lrelease \
 		/opt/homebrew/bin/lrelease \
