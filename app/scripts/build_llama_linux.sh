@@ -139,6 +139,58 @@ resolve_cuda_compiler() {
     echo ""
 }
 
+resolve_cuda_driver_library() {
+    local candidate=""
+
+    if command -v ldconfig >/dev/null 2>&1; then
+        while IFS= read -r candidate; do
+            candidate="${candidate##* => }"
+            [[ -f "$candidate" ]] || continue
+            echo "$candidate"
+            return 0
+        done < <(ldconfig -p 2>/dev/null | awk '/libcuda\.so\.1/ { print $NF }')
+    fi
+
+    for candidate in \
+        /usr/lib/x86_64-linux-gnu/libcuda.so.1 \
+        /usr/lib64/libcuda.so.1 \
+        /usr/lib/x86_64-linux-gnu/stubs/libcuda.so \
+        /usr/lib/aarch64-linux-gnu/stubs/libcuda.so \
+        /usr/lib/*-linux-gnu/stubs/libcuda.so \
+        /usr/lib/wsl/lib/libcuda.so.1 \
+        /usr/local/cuda/targets/x86_64-linux/lib/stubs/libcuda.so \
+        /usr/local/cuda-*/targets/x86_64-linux/lib/stubs/libcuda.so; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    echo ""
+}
+
+prepare_cuda_driver_link_dir() {
+    local cuda_driver_lib="$1"
+    local build_dir="$2"
+
+    if [[ -z "$cuda_driver_lib" || ! -f "$cuda_driver_lib" ]]; then
+        echo ""
+        return 0
+    fi
+
+    if [[ "$(basename "$cuda_driver_lib")" == "libcuda.so.1" ]]; then
+        echo "$(dirname "$cuda_driver_lib")"
+        return 0
+    fi
+
+    local shim_dir="$build_dir/cuda-driver-link"
+    rm -rf "$shim_dir"
+    mkdir -p "$shim_dir"
+    ln -sf "$cuda_driver_lib" "$shim_dir/libcuda.so"
+    ln -sf "$cuda_driver_lib" "$shim_dir/libcuda.so.1"
+    echo "$shim_dir"
+}
+
 normalize_shared_library_rpaths() {
     if ! command -v patchelf >/dev/null 2>&1; then
         echo "Warning: patchelf not found; skipping RUNPATH fix for llama libraries."
@@ -163,6 +215,7 @@ build_variant() {
     local runtime_subdir="$5"
     local cuda_host_compiler="$6"
     local cuda_compiler="$7"
+    local cuda_driver_link_dir="$8"
 
     local build_dir="$LLAMA_DIR/build-$variant"
     rm -rf "$build_dir"
@@ -193,10 +246,27 @@ build_variant() {
             -DCMAKE_CUDA_COMPILER="$cuda_compiler"
             -DCMAKE_CUDA_HOST_COMPILER="$cuda_host_compiler"
         )
+        if [[ -n "$cuda_driver_link_dir" ]]; then
+            local linker_flags="-Wl,-rpath-link,$cuda_driver_link_dir"
+            cmake_args+=(
+                -DCMAKE_EXE_LINKER_FLAGS="$linker_flags"
+                -DCMAKE_SHARED_LINKER_FLAGS="$linker_flags"
+                -DCMAKE_MODULE_LINKER_FLAGS="$linker_flags"
+            )
+        fi
     fi
 
-    cmake "${cmake_args[@]}"
-    cmake --build "$build_dir" --config Release -- -j"$(nproc)"
+    local -a build_env=()
+    if [[ "$cuda_flag" == "ON" && -n "$cuda_driver_link_dir" ]]; then
+        local library_path="$cuda_driver_link_dir"
+        if [[ -n "${LIBRARY_PATH:-}" ]]; then
+            library_path="${library_path}:$LIBRARY_PATH"
+        fi
+        build_env=(env "LIBRARY_PATH=$library_path")
+    fi
+
+    "${build_env[@]}" cmake "${cmake_args[@]}"
+    "${build_env[@]}" cmake --build "$build_dir" --config Release -- -j"$(nproc)"
 
     local variant_root="$PRECOMPILED_ROOT_DIR/$variant"
     local variant_bin="$variant_root/bin"
@@ -240,6 +310,8 @@ fi
 # Always build a CPU baseline (OpenBLAS when available)
 CUDA_HOST_COMPILER=""
 CUDA_COMPILER=""
+CUDA_DRIVER_LIB=""
+CUDA_DRIVER_LINK_DIR=""
 if [[ "$CUDASWITCH" == "ON" ]]; then
     CUDA_COMPILER="$(resolve_cuda_compiler)"
     if [[ -z "$CUDA_COMPILER" ]]; then
@@ -255,9 +327,20 @@ if [[ "$CUDASWITCH" == "ON" ]]; then
     fi
     echo "CUDA compiler: $CUDA_COMPILER"
     echo "CUDA host compiler: $CUDA_HOST_COMPILER"
+    CUDA_DRIVER_LIB="$(resolve_cuda_driver_library)"
+    if [[ -z "$CUDA_DRIVER_LIB" ]]; then
+        echo "CUDA requested but no libcuda driver library or toolkit stub was found." >&2
+        echo "Install the NVIDIA driver (providing libcuda.so.1) or a full CUDA Toolkit with stubs, then retry." >&2
+        exit 1
+    fi
+    CUDA_DRIVER_LINK_DIR="$(prepare_cuda_driver_link_dir "$CUDA_DRIVER_LIB" "$LLAMA_DIR/build-cuda-link")"
+    echo "CUDA driver link target: $CUDA_DRIVER_LIB"
+    if [[ "$CUDA_DRIVER_LINK_DIR" != "$(dirname "$CUDA_DRIVER_LIB")" ]]; then
+        echo "Using CUDA stub link shim: $CUDA_DRIVER_LINK_DIR"
+    fi
 fi
 
-build_variant "cpu" "OFF" "OFF" "$RESOLVED_BLAS" "wocuda" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER"
+build_variant "cpu" "OFF" "OFF" "$RESOLVED_BLAS" "wocuda" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER" "$CUDA_DRIVER_LINK_DIR"
 
 # Build requested accelerator variant if applicable
 REQUESTED_VARIANT="cpu"
@@ -271,7 +354,7 @@ elif [[ "$VULKANSWITCH" == "ON" ]]; then
 fi
 
 if [[ "$REQUESTED_VARIANT" != "cpu" ]]; then
-    build_variant "$REQUESTED_VARIANT" "$CUDASWITCH" "$VULKANSWITCH" "$RESOLVED_BLAS" "$REQUESTED_RUNTIME" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER"
+    build_variant "$REQUESTED_VARIANT" "$CUDASWITCH" "$VULKANSWITCH" "$RESOLVED_BLAS" "$REQUESTED_RUNTIME" "$CUDA_HOST_COMPILER" "$CUDA_COMPILER" "$CUDA_DRIVER_LINK_DIR"
 fi
 
 # Copy headers once (from the source tree)
