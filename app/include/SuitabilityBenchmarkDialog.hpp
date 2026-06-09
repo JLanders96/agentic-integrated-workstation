@@ -107,6 +107,7 @@ private:
     std::thread worker_;
     bool recording_{false};
     bool showing_previous_results_{false};
+    bool last_report_stale_{false};
     QString last_run_stamp_;
     QString last_report_;
     QStringList current_report_;
