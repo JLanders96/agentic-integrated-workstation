@@ -1231,7 +1231,9 @@ if(AI_FILE_SORTER_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/LocalFsProvider.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/Logger.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/OneDriveStorageProvider.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib/GgmlRuntimePaths.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/Utils.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib/Version.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/WindowsCudaProbe.cpp"
     )
     target_include_directories(aifs_onedrive_storage_plugin PRIVATE
@@ -1379,6 +1381,7 @@ if(AI_FILE_SORTER_BUILD_TESTS)
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/UpdateFeed.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/UpdateInstaller.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/Updater.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/GgmlRuntimePaths.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/Utils.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/VisualModelCatalog.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/lib/WindowsCudaProbe.cpp"
