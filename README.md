@@ -347,10 +347,13 @@ File categorization with local LLMs is completely free of charge. If you prefer 
     ```
 
     Debian/Ubuntu users can use the distro-packaged toolkit (`nvidia-cuda-toolkit`) if it
-    matches the driver/runtime they intend to build against. Fedora/RHEL users should use a
-    supported CUDA Toolkit install from NVIDIA's Linux installation guide because the NVIDIA
-    CUDA repository setup varies by release. On Fedora, enable the NVIDIA CUDA repository
-    first or `sudo dnf install cuda-toolkit` will fail with "No match for argument":
+    matches the driver/runtime they intend to build against. The Linux helper can also fall
+    back to the toolkit's `libcuda` stubs when `libcuda.so.1` is not on the default linker
+    path, which is useful on CI or build-only hosts, but running the CUDA backend still
+    requires a real NVIDIA driver installation. Fedora/RHEL users should use a supported CUDA
+    Toolkit install from NVIDIA's Linux installation guide because the NVIDIA CUDA repository
+    setup varies by release. On Fedora, enable the NVIDIA CUDA repository first or
+    `sudo dnf install cuda-toolkit` will fail with "No match for argument":
 
     ```bash
     distro="fedora$(rpm -E %fedora)"
@@ -434,10 +437,11 @@ File categorization with local LLMs is completely free of charge. If you prefer 
    ```bash
    # CPU / OpenBLAS
    ./app/scripts/build_llama_linux.sh cuda=off vulkan=off
-   # CUDA (optional; requires NVIDIA driver + full CUDA Toolkit; verify `nvidia-smi`
-   # and `nvcc --version` first. If `nvcc` is not on PATH after install, run
-   # `export PATH=/usr/local/cuda/bin:$PATH` in this shell. On Linux the helper also
-   # needs a CUDA-supported g++ host compiler and now prefers /usr/bin/g++-15 first.)
+   # CUDA (optional; runtime use requires NVIDIA driver + full CUDA Toolkit; verify
+   # `nvidia-smi` and `nvcc --version` first. If `nvcc` is not on PATH after install,
+   # run `export PATH=/usr/local/cuda/bin:$PATH` in this shell. The Linux helper can
+   # use toolkit libcuda stubs on build-only hosts, and it also needs a CUDA-supported
+   # g++ host compiler, preferring /usr/bin/g++-15 first.)
    ./app/scripts/build_llama_linux.sh cuda=on vulkan=off
    # Vulkan (optional; requires a working Vulkan 1.2+ stack and glslc; on Fedora install
    # vulkan-tools + glslc and ensure `vulkaninfo` succeeds. Mesa-based systems also need
