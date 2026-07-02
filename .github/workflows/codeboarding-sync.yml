@@ -37,6 +37,7 @@ jobs:
       - uses: CodeBoarding/CodeBoarding-action@v1
         with:
           mode: sync
+          depth_level: 5
           force_full: ${{ inputs.force_full || false }}
           # Free tier needs no secret — these fall through to the hosted OIDC tier when
           # unset. Add either repo secret (Settings → Secrets and variables → Actions)
