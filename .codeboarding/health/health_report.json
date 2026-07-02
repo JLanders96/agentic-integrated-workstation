@@ -1,6 +1,6 @@
 {
   "repository_name": "agentic-integrated-workstation",
-  "timestamp": "2026-07-02T14:31:50.267908+00:00",
+  "timestamp": "2026-07-02T15:17:30.638010+00:00",
   "overall_score": 0.06600467289719626,
   "check_summaries": [
     {
@@ -63,26 +63,6 @@
       "finding_groups": []
     },
     {
-      "check_name": "circular_dependencies",
-      "description": "Detects circular dependencies between packages",
-      "language": "python",
-      "check_type": "circular_dependencies",
-      "cycles": [],
-      "packages_checked": 1,
-      "packages_in_cycles": 0
-    },
-    {
-      "check_name": "package_instability",
-      "description": "Computes Martin's instability metric (I = Ce / (Ca + Ce)) per package",
-      "language": "python",
-      "check_type": "standard",
-      "total_entities_checked": 0,
-      "findings_count": 0,
-      "warning_count": 0,
-      "score": 1.0,
-      "finding_groups": []
-    },
-    {
       "check_name": "unused_code_diagnostics",
       "description": "Detects unused imports, variables, functions, and dead code via LSP diagnostics",
       "language": "python",
@@ -129,26 +109,6 @@
     {
       "check_name": "god_class",
       "description": "Detects classes with too many methods, too much code, or too many outgoing dependencies",
-      "language": "typescript",
-      "check_type": "standard",
-      "total_entities_checked": 0,
-      "findings_count": 0,
-      "warning_count": 0,
-      "score": 1.0,
-      "finding_groups": []
-    },
-    {
-      "check_name": "circular_dependencies",
-      "description": "Detects circular dependencies between packages",
-      "language": "typescript",
-      "check_type": "circular_dependencies",
-      "cycles": [],
-      "packages_checked": 3,
-      "packages_in_cycles": 0
-    },
-    {
-      "check_name": "package_instability",
-      "description": "Computes Martin's instability metric (I = Ce / (Ca + Ce)) per package",
       "language": "typescript",
       "check_type": "standard",
       "total_entities_checked": 0,
