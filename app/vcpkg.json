@@ -2,7 +2,7 @@
   "name": "ai-file-sorter",
   "version-string": "0.1.0",
   "description": "AI File Sorter (Qt6) - Windows build dependencies",
-  "builtin-baseline": "3b9d086009cc1c2256e9c28ad44a00036fbd9b26",
+  "builtin-baseline": "9e593bb18ea69cc5095e012465dcd675a822ed0d",
   "dependencies": [
     "qtbase",
     "qttools",
